@@ -888,7 +888,7 @@ const CSS = `
 .lw-date-menu {
   left: 0;
   right: auto;
-  min-width: 248px;
+  min-width: 164px;
   padding: 6px;
 }
 

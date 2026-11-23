@@ -63,10 +63,9 @@ function formatShortDate(iso: string): string {
   return `${Number(m[2])}月${Number(m[3])}日`
 }
 
-function formatPillDate(iso: string, todayIso: string): string {
+function formatPillDate(iso: string): string {
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-  const short = m ? `${m[2]}-${m[3]}` : iso
-  return iso === todayIso ? `今天 ${short}` : short
+  return m ? `${m[2]}-${m[3]}` : iso
 }
 
 function formatMonthLabel(ym: string): string {
@@ -1427,7 +1426,7 @@ export function ProjectsView({
                           style={{ width: 6, height: 6 }}
                         />
                       )}
-                      <span>{formatPillDate(selectedTaskDate, snapshot.date)}</span>
+                      <span className="lw-mono">{formatPillDate(selectedTaskDate)}</span>
                       <IconChevronDown size={12} />
                     </button>
 
@@ -1459,19 +1458,9 @@ export function ProjectsView({
                                         opacity: tf ? 1 : 0.35,
                                       }}
                                     />
-                                    <span style={{ flex: 1 }}>
-                                      {formatPillDate(d, snapshot.date)}
+                                    <span className="lw-mono" style={{ flex: 1 }}>
+                                      {formatPillDate(d)}
                                     </span>
-                                    {tf ? (
-                                      <span className="lw-muted" style={{ fontSize: 11.5 }}>
-                                        {tf.doneCount}/{tf.totalCount}
-                                        {tf.totalMinutes > 0 ? ` · ${tf.totalMinutes}m` : ''}
-                                      </span>
-                                    ) : (
-                                      <span className="lw-muted" style={{ fontSize: 11.5 }}>
-                                        未开始
-                                      </span>
-                                    )}
                                     <span
                                       style={{
                                         width: 12,
@@ -1490,13 +1479,10 @@ export function ProjectsView({
                         </div>
 
                         <div className="lw-date-menu-foot">
-                          <span className="lw-muted" style={{ fontSize: 11.5 }}>
-                            共 {activeDetail.taskFiles.length} 天记录
-                          </span>
                           <button
                             type="button"
                             className="lw-btn lw-btn-sm lw-btn-ghost"
-                            style={{ height: 24, padding: '0 6px', fontSize: 12 }}
+                            style={{ height: 24, padding: '0 6px', fontSize: 12, width: '100%' }}
                             onClick={() => {
                               try {
                                 taskDateInputRef.current?.showPicker?.()
@@ -1507,7 +1493,7 @@ export function ProjectsView({
                             }}
                           >
                             <IconCalendar size={12} />
-                            任意日期
+                            选择其他日期
                           </button>
                         </div>
                       </div>
@@ -1529,20 +1515,6 @@ export function ProjectsView({
                   >
                     <IconChevronRight size={14} />
                   </button>
-
-                  {!isTodaySelected && (
-                    <button
-                      type="button"
-                      className="lw-btn lw-btn-sm lw-btn-ghost"
-                      style={{ height: 24, padding: '0 6px', fontSize: 12 }}
-                      onClick={() => {
-                        setTaskDateMenuOpen(false)
-                        setSelectedTaskDate(snapshot.date)
-                      }}
-                    >
-                      今天
-                    </button>
-                  )}
 
                   <input
                     ref={taskDateInputRef}
