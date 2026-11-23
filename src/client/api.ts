@@ -136,7 +136,7 @@ export const api = {
     apiPost<{ relPath: string }>('/ideas/create', { title, ideaText }),
   promoteIdea: (
     ideaName: string,
-    opts: { area: string; start?: string; deadline?: string; goal?: string },
+    opts: { area: string; created?: string; deadline?: string; goal?: string },
   ) => apiPost<{ relPath: string }>('/ideas/promote', { ideaName, ...opts }),
   cancelIdea: (ideaName: string, reason?: string) =>
     apiPost<{ relPath: string }>('/ideas/cancel', { ideaName, reason }),
@@ -144,7 +144,7 @@ export const api = {
   createProject: (opts: {
     name: string
     area: string
-    start?: string
+    created?: string
     deadline?: string
     idea?: string
     goal?: string
@@ -155,7 +155,7 @@ export const api = {
     apiPost<{ relPath: string }>('/project/restore', { projectName }),
   updateProjectMeta: (
     projectName: string,
-    patch: { status?: ProjectStatus; area?: string; start?: string; deadline?: string },
+    patch: { status?: ProjectStatus; area?: string; created?: string; deadline?: string },
   ) => apiPost<{ updated: boolean }>('/project/meta', { projectName, ...patch }),
   togglePlanItem: (projectName: string, lineIndex: number) =>
     apiPost<{ updated: boolean }>('/project/plan/toggle', { projectName, lineIndex }),

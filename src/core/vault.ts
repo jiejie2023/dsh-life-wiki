@@ -99,13 +99,13 @@ export interface LifeWikiEngine {
   createIdea(title: string, ideaText: string): Promise<string>
   promoteIdeaToProject(
     ideaName: string,
-    opts: { area: string; start?: string; deadline?: string; timeframe?: string; goal?: string },
+    opts: { area: string; created?: string; deadline?: string; timeframe?: string; goal?: string },
   ): Promise<string>
   cancelIdea(ideaName: string, reason?: string): Promise<string>
   createProject(opts: {
     name: string
     area: string
-    start?: string
+    created?: string
     deadline?: string
     timeframe?: string
     idea?: string
@@ -118,7 +118,7 @@ export interface LifeWikiEngine {
     patch: {
       status?: ProjectStatus
       area?: string
-      start?: string
+      created?: string
       deadline?: string
       timeframe?: string
     },
@@ -606,7 +606,7 @@ export function createLifeWikiEngine(
     const fm = parseFrontmatter(homepageContent)
     const status = parseProjectStatus(fm.fields.status)
     const area = fm.fields.area ?? ''
-    const start = fm.fields.start ?? ''
+    const created = fm.fields.created ?? fm.fields.start ?? ''
     const deadline = fm.fields.deadline ?? ''
     const timeframe = fm.fields.timeframe ?? ''
     const idea = getSectionText(fm.lines, '想法')
@@ -732,7 +732,7 @@ export function createLifeWikiEngine(
       homepageRelPath,
       status,
       area,
-      start,
+      created,
       deadline,
       timeframe,
       idea,
@@ -926,7 +926,7 @@ export function createLifeWikiEngine(
         '---',
         'status: idea',
         'area: ',
-        'start: ',
+        `created: ${date}`,
         'deadline: ',
         '---',
         '',
@@ -1063,7 +1063,7 @@ export function createLifeWikiEngine(
       let updated = updateFrontmatterFields(orig, {
         status: 'doing',
         area: opts.area.trim(),
-        start: (opts.start ?? today).trim(),
+        created: (opts.created ?? today).trim(),
         deadline: (opts.deadline ?? '').trim(),
       })
       if (opts.goal?.trim()) {
@@ -1114,7 +1114,7 @@ export function createLifeWikiEngine(
           '---',
           'status: doing',
           `area: ${opts.area.trim()}`,
-          `start: ${(opts.start ?? today).trim()}`,
+          `created: ${(opts.created ?? today).trim()}`,
           `deadline: ${(opts.deadline ?? '').trim()}`,
           '---',
           '',
@@ -1196,7 +1196,7 @@ export function createLifeWikiEngine(
       const updates: Record<string, string> = {}
       if (patch.status !== undefined) updates.status = patch.status
       if (patch.area !== undefined) updates.area = patch.area
-      if (patch.start !== undefined) updates.start = patch.start
+      if (patch.created !== undefined) updates.created = patch.created
       if (patch.deadline !== undefined) updates.deadline = patch.deadline
       if (patch.timeframe !== undefined) updates.timeframe = patch.timeframe
       await writeVaultFile(relPath, updateFrontmatterFields(content, updates))

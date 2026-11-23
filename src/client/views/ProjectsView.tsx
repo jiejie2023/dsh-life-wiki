@@ -52,13 +52,13 @@ export function ProjectsView({
   const [showNewProject, setShowNewProject] = useState(false)
   const [projName, setProjName] = useState('')
   const [projArea, setProjArea] = useState(snapshot.areas[0] ?? '个人')
-  const [projStart, setProjStart] = useState(() => localTodayIso())
+  const [projCreated, setProjCreated] = useState(() => localTodayIso())
   const [projDeadline, setProjDeadline] = useState('')
   const [projGoal, setProjGoal] = useState('')
 
   const [promoteTarget, setPromoteTarget] = useState<IdeaSummary | null>(null)
   const [promoteArea, setPromoteArea] = useState(snapshot.areas[0] ?? '个人')
-  const [promoteStart, setPromoteStart] = useState(() => localTodayIso())
+  const [promoteCreated, setPromoteCreated] = useState(() => localTodayIso())
   const [promoteDeadline, setPromoteDeadline] = useState('')
   const [promoteGoal, setPromoteGoal] = useState('')
 
@@ -161,11 +161,11 @@ export function ProjectsView({
     e.preventDefault()
     if (!projName.trim()) return
     const name = projName.trim()
-    const start = projStart.trim() || localTodayIso()
+    const created = projCreated.trim() || localTodayIso()
     const deadline = projDeadline.trim()
     const goal = projGoal.trim() || undefined
     setProjName('')
-    setProjStart(localTodayIso())
+    setProjCreated(localTodayIso())
     setProjDeadline('')
     setProjGoal('')
     setShowNewProject(false)
@@ -174,7 +174,7 @@ export function ProjectsView({
       api.createProject({
         name,
         area: projArea,
-        start,
+        created,
         deadline,
         goal,
       }),
@@ -185,7 +185,7 @@ export function ProjectsView({
     e.preventDefault()
     if (!promoteTarget) return
     const target = promoteTarget
-    const start = promoteStart.trim() || localTodayIso()
+    const created = promoteCreated.trim() || localTodayIso()
     const deadline = promoteDeadline.trim()
     const goal = promoteGoal.trim() || undefined
     setPromoteTarget(null)
@@ -194,7 +194,7 @@ export function ProjectsView({
       () =>
         api.promoteIdea(target.name, {
           area: promoteArea,
-          start,
+          created,
           deadline,
           goal,
         }),
@@ -212,7 +212,7 @@ export function ProjectsView({
     await onRunAction(() => api.cancelIdea(target.name, reason))
   }
 
-  const updateDetailDate = (project: ProjectCard, field: 'start' | 'deadline', val: string) => {
+  const updateDetailDate = (project: ProjectCard, field: 'created' | 'deadline', val: string) => {
     void onRunAction(() => api.updateProjectMeta(project.name, { [field]: val }), {
       optimistic: (prev) => ({
         ...prev,
@@ -257,7 +257,7 @@ export function ProjectsView({
               setShowNewIdea(true)
             } else {
               setProjArea(snapshot.areas[0] ?? '个人')
-              setProjStart(localTodayIso())
+              setProjCreated(localTodayIso())
               setProjDeadline('')
               setShowNewProject(true)
             }
@@ -303,7 +303,7 @@ export function ProjectsView({
                     onClick={() => {
                       setPromoteTarget(idea)
                       setPromoteArea(snapshot.areas[0] ?? '个人')
-                      setPromoteStart(localTodayIso())
+                      setPromoteCreated(localTodayIso())
                       setPromoteDeadline('')
                       setPromoteGoal('')
                     }}
@@ -353,7 +353,7 @@ export function ProjectsView({
                       >
                         截止 {formatShortDate(p.deadline)}
                       </span>
-                    ) : !p.start && p.timeframe ? (
+                    ) : !p.created && p.timeframe ? (
                       <span className="lw-muted">{p.timeframe}</span>
                     ) : null}
                   </div>
@@ -473,12 +473,12 @@ export function ProjectsView({
 
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div>
-                      <label className="lw-field-label">开始日期 (start)</label>
+                      <label className="lw-field-label">创建日期 (created)</label>
                       <input
                         type="date"
                         className="lw-input"
-                        value={activeDetail.start}
-                        onChange={(e) => updateDetailDate(activeDetail, 'start', e.target.value)}
+                        value={activeDetail.created}
+                        onChange={(e) => updateDetailDate(activeDetail, 'created', e.target.value)}
                       />
                     </div>
                     <div>
@@ -510,7 +510,7 @@ export function ProjectsView({
                 <div className="lw-row">
                   <span className="lw-tag">{STATUS_LABELS[activeDetail.status]}</span>
                   {activeDetail.area && <span className="lw-tag">{activeDetail.area}</span>}
-                  {activeDetail.start && <span className="lw-tag">起 {activeDetail.start}</span>}
+                  {activeDetail.created && <span className="lw-tag">建 {activeDetail.created}</span>}
                   {activeDetail.deadline && <span className="lw-tag">止 {activeDetail.deadline}</span>}
                 </div>
               )}
@@ -759,12 +759,12 @@ export function ProjectsView({
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label className="lw-field-label">开始日期</label>
+                  <label className="lw-field-label">创建日期</label>
                   <input
                     type="date"
                     className="lw-input"
-                    value={projStart}
-                    onChange={(e) => setProjStart(e.target.value)}
+                    value={projCreated}
+                    onChange={(e) => setProjCreated(e.target.value)}
                   />
                 </div>
                 <div>
@@ -834,12 +834,12 @@ export function ProjectsView({
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label className="lw-field-label">开始日期</label>
+                  <label className="lw-field-label">创建日期</label>
                   <input
                     type="date"
                     className="lw-input"
-                    value={promoteStart}
-                    onChange={(e) => setPromoteStart(e.target.value)}
+                    value={promoteCreated}
+                    onChange={(e) => setPromoteCreated(e.target.value)}
                   />
                 </div>
                 <div>

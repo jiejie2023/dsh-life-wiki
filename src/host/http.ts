@@ -339,7 +339,7 @@ export function createHttpHandler(
             return {
               relPath: await engine.promoteIdeaToProject(String(body.ideaName ?? ''), {
                 area: String(body.area ?? ''),
-                start: typeof body.start === 'string' ? body.start : undefined,
+                created: typeof body.created === 'string' ? body.created : undefined,
                 deadline: typeof body.deadline === 'string' ? body.deadline : undefined,
                 timeframe: typeof body.timeframe === 'string' ? body.timeframe : undefined,
                 goal: typeof body.goal === 'string' ? body.goal : undefined,
@@ -359,7 +359,7 @@ export function createHttpHandler(
               relPath: await engine.createProject({
                 name: String(body.name ?? ''),
                 area: String(body.area ?? ''),
-                start: typeof body.start === 'string' ? body.start : undefined,
+                created: typeof body.created === 'string' ? body.created : undefined,
                 deadline: typeof body.deadline === 'string' ? body.deadline : undefined,
                 timeframe: typeof body.timeframe === 'string' ? body.timeframe : undefined,
                 idea: typeof body.idea === 'string' ? body.idea : undefined,
@@ -385,7 +385,7 @@ export function createHttpHandler(
               status:
                 typeof body.status === 'string' ? (body.status as ProjectStatus) : undefined,
               area: typeof body.area === 'string' ? body.area : undefined,
-              start: typeof body.start === 'string' ? body.start : undefined,
+              created: typeof body.created === 'string' ? body.created : undefined,
               deadline: typeof body.deadline === 'string' ? body.deadline : undefined,
               timeframe: typeof body.timeframe === 'string' ? body.timeframe : undefined,
             })
