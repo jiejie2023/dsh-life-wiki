@@ -380,7 +380,7 @@ export function ProjectReviewPanel({
                 <div key={`tw-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
                   <button
                     type="button"
-                    className={`lw-check ${item.done ? 'checked' : 'missed'}`}
+                    className={`lw-check ${item.done ? 'checked' : ''}`}
                     style={{ marginTop: 0 }}
                     disabled={project.archived}
                     title={item.done ? '已完成（点击切为未完成）' : '未完成（点击切为已完成）'}
@@ -391,7 +391,7 @@ export function ProjectReviewPanel({
                       commitDraft({ ...draft, thisWeekItems: nextItems }, true)
                     }}
                   >
-                    {item.done ? <IconCheck /> : <IconX size={10} />}
+                    {item.done && <IconCheck />}
                   </button>
                   <input
                     className="lw-inline-input"

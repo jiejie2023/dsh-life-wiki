@@ -313,10 +313,10 @@ export function ReviewView({
                               style={{ alignItems: 'center', paddingTop: 5, paddingBottom: 5 }}
                             >
                               <span
-                                className={`lw-check ${item.done ? 'checked' : 'missed'}`}
+                                className={`lw-check ${item.done ? 'checked' : ''}`}
                                 style={{ marginTop: 0, cursor: 'default' }}
                               >
-                                {item.done ? <IconCheck /> : <IconX size={10} />}
+                                {item.done && <IconCheck />}
                               </span>
                               <span className="lw-item-title">{item.text}</span>
                             </div>
