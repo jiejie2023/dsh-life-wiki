@@ -49,12 +49,6 @@ function formatReadableDate(isoDate: string): string {
   return `${m}月${d}日 · ${WEEKDAYS[dt.getDay()]}`
 }
 
-function formatDurationSummary(minutes: number): string {
-  if (minutes < 60) return `今日投入 ${minutes} min`
-  const h = (minutes / 60).toFixed(1).replace(/\.0$/, '')
-  return `今日投入 ${h} h`
-}
-
 function cleanDisplayBullet(line: string): string {
   return line.replace(/^\s*[-*•·]+\s+/, '').trim()
 }
@@ -127,20 +121,6 @@ export function TodayView({
     }
     return { activeGroups: active, idleGroups: idle }
   }, [groups, revealedProjects])
-
-  const totalDone = groups.reduce(
-    (sum, g) => sum + g.tasks.filter((t) => t.checked).length,
-    0,
-  )
-  const totalTasks = groups.reduce((sum, g) => sum + g.tasks.length, 0)
-  const totalMinutes = groups.reduce((sum, g) => sum + g.totalMinutes, 0)
-
-  const durationTooltip = useMemo(() => {
-    const parts = groups
-      .filter((g) => g.totalMinutes > 0)
-      .map((g) => `${g.projectName} ${g.totalMinutes} min`)
-    return parts.length > 0 ? `今日各项目投入：${parts.join('，')}` : '今日任务累计投入时长'
-  }, [groups])
 
   const handleDiaryAppend = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -373,16 +353,8 @@ export function TodayView({
           )}
         </div>
 
-        <div className="lw-muted" style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
-          {totalTasks > 0 && (
-            <span>
-              {totalDone} / {totalTasks} 完成
-            </span>
-          )}
-          {totalMinutes > 0 && (
-            <span title={durationTooltip}>{formatDurationSummary(totalMinutes)}</span>
-          )}
-          {formatWarnings.length > 0 && (
+        {formatWarnings.length > 0 && (
+          <div className="lw-muted" style={{ display: 'flex', alignItems: 'center' }}>
             <button
               type="button"
               className="lw-btn lw-btn-sm lw-btn-ghost"
@@ -391,8 +363,8 @@ export function TodayView({
             >
               {formatWarnings.length} 项格式提醒
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Quiet Diary Line */}
@@ -451,13 +423,7 @@ export function TodayView({
               <section key={group.projectName} className="lw-stack" style={{ gap: 6 }}>
                 {/* Section Header */}
                 <div className="lw-section-head">
-                  <div className="lw-row" style={{ gap: 8 }}>
-                    <h2 className="lw-section-title">{group.projectName}</h2>
-                    {group.area && <span className="lw-muted">{group.area}</span>}
-                    {group.totalMinutes > 0 && (
-                      <span className="lw-muted">{group.totalMinutes} min</span>
-                    )}
-                  </div>
+                  <h2 className="lw-section-title">{group.projectName}</h2>
 
                   <div className="lw-row" style={{ gap: 2 }}>
                     <div className="lw-mode-tabs" role="tablist">

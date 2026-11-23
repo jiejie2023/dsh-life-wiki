@@ -171,7 +171,11 @@ status: todo
 
 ## 日志
 
+- 随手一行记一件进展（重要决定以「决定：」开头）
+
 ## 反思
+
+- 只写原因、经验或下次调整（不重复日志里写过的事）
 `,
     'system/templates/project/02_resources/resources.md': `# 资料登记
 
