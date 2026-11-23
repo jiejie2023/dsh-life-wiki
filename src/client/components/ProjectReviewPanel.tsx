@@ -70,6 +70,7 @@ export function ProjectReviewPanel({
 
   const [selectedWeek, setSelectedWeek] = useState<string>(latestWeek)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [rawContent, setRawContent] = useState<string | null>(null)
   const [draft, setDraft] = useState<ReviewDraft | null>(null)
   const [loading, setLoading] = useState(false)
@@ -131,13 +132,17 @@ export function ProjectReviewPanel({
   }, [selectedSummary?.relPath])
 
   useEffect(() => {
-    if (!menuOpen) return
+    if (!menuOpen && !statusMenuOpen) return
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null
-      if (!t?.closest('[data-review-week-menu]')) setMenuOpen(false)
+      if (menuOpen && !t?.closest('[data-review-week-menu]')) setMenuOpen(false)
+      if (statusMenuOpen && !t?.closest('[data-review-status-menu]')) setStatusMenuOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMenuOpen(false)
+      if (e.key === 'Escape') {
+        setMenuOpen(false)
+        setStatusMenuOpen(false)
+      }
     }
     document.addEventListener('mousedown', onDown)
     window.addEventListener('keydown', onKey)
@@ -145,7 +150,7 @@ export function ProjectReviewPanel({
       document.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [menuOpen])
+  }, [menuOpen, statusMenuOpen])
 
   const updateDraft = (patch: Partial<ReviewDraft>) => {
     setDraft((prev) => {
@@ -181,7 +186,8 @@ export function ProjectReviewPanel({
     }
   }
 
-  const handleStatusToggle = (nextStatus: ReviewStatus) => {
+  const handleSelectStatus = (nextStatus: ReviewStatus) => {
+    setStatusMenuOpen(false)
     if (!draft || project.archived || draft.status === nextStatus) return
     const next: ReviewDraft = { ...draft, status: nextStatus }
     setDraft(next)
@@ -204,7 +210,7 @@ export function ProjectReviewPanel({
         await api.generateWeeklyReview(project.name, currentWeek)
         setSelectedWeek(currentWeek)
       },
-      { toast: `已生成 ${currentWeek} 复盘草稿` },
+      { toast: `已生成 ${currentWeek} 周复盘` },
     )
   }
 
@@ -218,7 +224,7 @@ export function ProjectReviewPanel({
             className="lw-btn lw-btn-sm lw-btn-primary"
             onClick={() => void handleGenerateCurrentWeek()}
           >
-            生成本周草稿 ({currentWeek})
+            生成本周复盘 ({currentWeek})
           </button>
         )}
       </div>
@@ -283,9 +289,6 @@ export function ProjectReviewPanel({
                           <span className="lw-mono" style={{ flex: 1 }}>
                             {rf.week}
                           </span>
-                          <span className="lw-muted" style={{ fontSize: 11.5 }}>
-                            {rf.status === 'final' ? '已定稿' : '草稿'}
-                          </span>
                           <span
                             style={{
                               width: 12,
@@ -308,7 +311,7 @@ export function ProjectReviewPanel({
                       style={{ height: 24, padding: '0 6px', fontSize: 12, width: '100%' }}
                       onClick={() => void handleGenerateCurrentWeek()}
                     >
-                      + 生成本周草稿 ({currentWeek})
+                      + 生成本周复盘 ({currentWeek})
                     </button>
                   </div>
                 )}
@@ -328,25 +331,43 @@ export function ProjectReviewPanel({
           </button>
         </div>
 
-        <div className="lw-row" style={{ gap: 4 }}>
+        <div className="lw-row" style={{ gap: 2 }}>
           {saving && <span className="lw-muted" style={{ marginRight: 4 }}>保存中…</span>}
           {draft && !project.archived && (
-            <>
+            <div className="lw-menu-wrap" data-review-status-menu>
               <button
                 type="button"
-                className={`lw-verdict-btn ${draft.status === 'draft' ? 'active-think' : ''}`}
-                onClick={() => handleStatusToggle('draft')}
+                className={`lw-status-trigger ${statusMenuOpen ? 'open' : ''}`}
+                onClick={() => setStatusMenuOpen((v) => !v)}
               >
-                草稿
+                <span className={`lw-status-dot ${draft.status === 'final' ? 'done' : 'todo'}`} />
+                <span>{draft.status === 'final' ? '已审核' : '待审核'}</span>
+                <IconChevronDown size={12} />
               </button>
-              <button
-                type="button"
-                className={`lw-verdict-btn ${draft.status === 'final' ? 'active-go' : ''}`}
-                onClick={() => handleStatusToggle('final')}
-              >
-                已定稿
-              </button>
-            </>
+
+              {statusMenuOpen && (
+                <div className="lw-menu" role="menu">
+                  {(
+                    [
+                      ['draft', '待审核', 'todo'],
+                      ['final', '已审核', 'done'],
+                    ] as const
+                  ).map(([val, label, dotCls]) => (
+                    <button
+                      key={val}
+                      type="button"
+                      role="menuitem"
+                      className={`lw-menu-item ${draft.status === val ? 'active' : ''}`}
+                      onClick={() => handleSelectStatus(val)}
+                    >
+                      <span className={`lw-status-dot ${dotCls}`} />
+                      <span style={{ flex: 1 }}>{label}</span>
+                      {draft.status === val && <IconCheck size={12} />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
           )}
           <button
             type="button"

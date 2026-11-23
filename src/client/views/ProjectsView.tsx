@@ -1257,11 +1257,11 @@ export function ProjectsView({
                       async () => {
                         await api.generateWeeklyReview(activeDetail.name, snapshot.week)
                       },
-                      { toast: `已生成 ${snapshot.week} 复盘草稿` },
+                      { toast: `已生成 ${snapshot.week} 周复盘` },
                     )
                   }
                 >
-                  生成本周草稿
+                  生成本周复盘
                 </button>
               </div>
             )}

@@ -129,7 +129,7 @@ export function ReviewView({
                             rev.status === 'final' ? 'lw-tag-accent' : 'lw-tag-warn'
                           }`}
                         >
-                          {rev.status === 'final' ? '已定稿' : '草稿'}
+                          {rev.status === 'final' ? '已审核' : '待审核'}
                         </span>
                       )}
                     </div>
@@ -211,11 +211,11 @@ export function ReviewView({
                                     nextWeek: parseLines(getNextWeekDraft(rev)),
                                     status: 'final',
                                   }),
-                                { toast: '已定稿' },
+                                { toast: '已审核' },
                               )
                             }
                           >
-                            定稿
+                            审核通过
                           </button>
                         ) : (
                           <button
@@ -227,7 +227,7 @@ export function ReviewView({
                               )
                             }
                           >
-                            改回草稿
+                            改为待审核
                           </button>
                         )}
                       </div>
