@@ -788,6 +788,168 @@ const CSS = `
   color: var(--lw-text);
 }
 
+/* Status dropdown menu */
+.lw-menu-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.lw-status-trigger {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--lw-text-2);
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s, border-color 0.14s;
+}
+
+.lw-status-trigger:hover,
+.lw-status-trigger.open {
+  background: var(--lw-hover);
+  color: var(--lw-text);
+}
+
+.lw-status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.lw-status-dot.todo { background: var(--lw-muted); }
+.lw-status-dot.doing { background: var(--lw-warn); }
+.lw-status-dot.done { background: var(--lw-accent); }
+
+.lw-menu {
+  position: absolute;
+  top: calc(100% + 5px);
+  right: 0;
+  z-index: 60;
+  min-width: 132px;
+  padding: 4px;
+  border-radius: 9px;
+  background: var(--lw-surface);
+  box-shadow: var(--lw-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: lwScaleIn 0.14s var(--lw-ease);
+}
+
+.lw-menu-item {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--lw-text);
+  font-size: 13px;
+  padding: 6px 9px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.12s;
+}
+
+.lw-menu-item:hover {
+  background: var(--lw-hover);
+}
+
+.lw-menu-item.active {
+  font-weight: 600;
+}
+
+/* Segmented mini switcher (Log / Reflection) */
+.lw-seg {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: 7px;
+  background: var(--lw-hover);
+  flex-shrink: 0;
+}
+
+.lw-seg-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--lw-muted);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 3px 9px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+
+.lw-seg-btn:hover {
+  color: var(--lw-text-2);
+}
+
+.lw-seg-btn.active {
+  background: var(--lw-surface);
+  color: var(--lw-text);
+  box-shadow: var(--lw-shadow-sm);
+}
+
+/* Clickable task duration chip */
+.lw-time-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--lw-muted);
+  font-size: 12.5px;
+  padding: 2px 6px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.lw-time-btn:hover {
+  background: var(--lw-hover-strong);
+  color: var(--lw-text);
+}
+
+.lw-notes-box {
+  padding: 12px 14px;
+  border-radius: 9px;
+  background: var(--lw-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.lw-note-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+
+.lw-note-tag {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--lw-muted);
+  min-width: 28px;
+}
+
+.lw-note-tag.reflection {
+  color: var(--lw-accent-text);
+}
+
 /* Diary photos */
 .lw-photo-grid {
   display: flex;

@@ -61,6 +61,14 @@ export function IconChevronRight({ size = 15, className }: IconProps) {
   )
 }
 
+export function IconChevronDown({ size = 13, className }: IconProps) {
+  return (
+    <svg {...base(size)} className={className}>
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  )
+}
+
 export function IconPlus({ size = 15, className }: IconProps) {
   return (
     <svg {...base(size)} className={className}>

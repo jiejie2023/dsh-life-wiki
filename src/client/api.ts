@@ -114,6 +114,8 @@ export const api = {
     apiPost<{ relPath: string }>('/tasks/add', { projectName, text, date }),
   toggleTask: (relPath: string, lineIndex: number, minutes?: number) =>
     apiPost<{ updated: boolean }>('/tasks/toggle', { relPath, lineIndex, minutes }),
+  setTaskMinutes: (relPath: string, lineIndex: number, minutes: number | null) =>
+    apiPost<{ updated: boolean }>('/tasks/minutes', { relPath, lineIndex, minutes }),
   updateTaskStatus: (relPath: string, status: TaskFileStatus) =>
     apiPost<{ updated: boolean }>('/tasks/status', { relPath, status }),
   appendTaskEntry: (relPath: string, section: 'log' | 'reflection', text: string) =>

@@ -1,6 +1,6 @@
 {
   "name": "dsh-life-wiki",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Life Wiki（人生知识库）— 本地优先的 Markdown 个人项目、日记、复盘与知识库 DSH 插件",
   "license": "MIT",
   "type": "module",

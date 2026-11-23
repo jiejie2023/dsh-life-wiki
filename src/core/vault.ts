@@ -46,6 +46,7 @@ import {
   parseTaskFile,
   replaceSectionBody,
   resolveVaultPath,
+  setCheckboxMinutes,
   splitLines,
   toggleCheckboxLine,
   updateFrontmatterFields,
@@ -81,6 +82,7 @@ export interface LifeWikiEngine {
   readBinaryFile(relPath: string): Promise<{ buffer: Buffer; mime: string }>
   createTaskFile(projectName: string, dateStr?: string): Promise<string>
   toggleTask(relPath: string, lineIndex: number, minutes?: number): Promise<void>
+  setTaskMinutes(relPath: string, lineIndex: number, minutes: number | null): Promise<void>
   addTask(projectName: string, text: string, dateStr?: string): Promise<string>
   updateTaskFileStatus(relPath: string, status: TaskFileStatus): Promise<void>
   appendTaskEntry(relPath: string, section: 'log' | 'reflection', text: string): Promise<void>
@@ -981,6 +983,16 @@ export function createLifeWikiEngine(
         throw new Error(`Invalid task line index: ${lineIndex}`)
       }
       lines[lineIndex] = toggleCheckboxLine(lines[lineIndex]!, minutes)
+      await writeVaultFile(relPath, joinLines(lines, eol))
+    },
+
+    async setTaskMinutes(relPath, lineIndex, minutes) {
+      const { content } = await readVaultFile(relPath)
+      const { lines, eol } = splitLines(content)
+      if (lineIndex < 0 || lineIndex >= lines.length) {
+        throw new Error(`Invalid task line index: ${lineIndex}`)
+      }
+      lines[lineIndex] = setCheckboxMinutes(lines[lineIndex]!, minutes)
       await writeVaultFile(relPath, joinLines(lines, eol))
     },
 

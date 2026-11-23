@@ -324,6 +324,18 @@ export function toggleCheckboxLine(line: string, minutes?: number): string {
   return `${match[1]}${nextChecked ? 'x' : ' '}${match[3]}${body}`
 }
 
+export function setCheckboxMinutes(line: string, minutes: number | null): string {
+  const match = /^(\s*-\s+\[[ xX]\]\s+)(.*)$/.exec(line)
+  if (!match) throw new Error(`Line is not a markdown checkbox: ${line}`)
+  const cleaned = match[2]!
+    .replace(/\s*[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]\s*$/i, '')
+    .trimEnd()
+  if (typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0) {
+    return `${match[1]}${cleaned}（${Math.round(minutes)} 分钟）`
+  }
+  return `${match[1]}${cleaned}`
+}
+
 export function appendLineToSection(
   content: string,
   sectionTitle: string,

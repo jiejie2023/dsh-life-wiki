@@ -94,6 +94,10 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
       snap = await engine.getSnapshot('2026-11-24')
       const grp = snap.today.groups.find((g) => g.projectName === '播客剪辑工具')!
       await engine.toggleTask(taskFile, grp.tasks[0]!.lineIndex, 45)
+      await engine.setTaskMinutes(taskFile, grp.tasks[0]!.lineIndex, 60)
+      snap = await engine.getSnapshot('2026-11-24')
+      assert.equal(snap.today.groups.find((g) => g.projectName === '播客剪辑工具')?.totalMinutes, 60)
+      await engine.setTaskMinutes(taskFile, grp.tasks[0]!.lineIndex, 45)
       await engine.appendDiary('今天推进了播客工具调研，效率不错。', '2026-11-24', '21:10')
 
       // 4. Auto-generate weekly review draft from this week's tasks & finalize it

@@ -46,8 +46,9 @@ function detectHostTheme(): 'light' | 'dark' {
   }
   try {
     const bg = getComputedStyle(body || root).backgroundColor
-    const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/)
-    if (m) {
+    const m = bg.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/)
+    const alpha = m && m[4] !== undefined ? Number(m[4]) : 1
+    if (m && alpha > 0.1) {
       const lum = (0.299 * Number(m[1]) + 0.587 * Number(m[2]) + 0.114 * Number(m[3])) / 255
       if (lum < 0.4) return 'dark'
       if (lum > 0.6) return 'light'

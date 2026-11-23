@@ -270,6 +270,14 @@ export function createHttpHandler(
             )
             return { updated: true }
 
+          case '/api/life-wiki/tasks/minutes':
+            await engine.setTaskMinutes(
+              String(body.relPath ?? ''),
+              Number(body.lineIndex),
+              typeof body.minutes === 'number' ? body.minutes : null,
+            )
+            return { updated: true }
+
           case '/api/life-wiki/tasks/add':
             return {
               relPath: await engine.addTask(
