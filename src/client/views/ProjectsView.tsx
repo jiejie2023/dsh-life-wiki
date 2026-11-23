@@ -21,6 +21,7 @@ import {
   IconProjectPie,
   IconX,
 } from '../components/Icons.tsx'
+import { IdeaDetailView } from '../components/IdeaDetailView.tsx'
 import { MarkdownView } from '../components/MarkdownView.tsx'
 import { ProjectTaskPanel, priorityLabel } from '../components/ProjectTaskPanel.tsx'
 
@@ -100,8 +101,9 @@ export function ProjectsView({
   const [subTab, setSubTab] = useState<LifeCycleTab>('doing')
   const [areaFilter, setAreaFilter] = useState<string>('ALL')
 
-  // Full-page Project Detail state
+  // Full-page Project & Idea Detail state
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null)
+  const [selectedIdeaName, setSelectedIdeaName] = useState<string | null>(null)
   const [selectedArchived, setSelectedArchived] = useState(false)
   const [detailTab, setDetailTab] = useState<DetailTab>('plan')
   const [newPlanText, setNewPlanText] = useState('')
@@ -194,6 +196,10 @@ export function ProjectsView({
       ) ??
         snapshot.archivedProjects.find((p) => p.name === selectedProjectName) ??
         null)
+    : null
+
+  const activeIdea: IdeaSummary | null = selectedIdeaName
+    ? (snapshot.ideas.find((i) => i.name === selectedIdeaName) ?? null)
     : null
 
   // Auto-size inline editable goal textarea to fit content cleanly
@@ -307,6 +313,7 @@ export function ProjectsView({
   ])
 
   const openProjectDetail = (p: ProjectCard) => {
+    setSelectedIdeaName(null)
     setSelectedProjectName(p.name)
     setSelectedArchived(p.archived)
     setDetailTab('plan')
@@ -638,6 +645,7 @@ export function ProjectsView({
     const deadline = promoteDeadline.trim()
     const goal = promoteGoal.trim() || undefined
     setPromoteTarget(null)
+    setSelectedIdeaName(null)
     setSubTab('doing')
     await onRunAction(
       () =>
@@ -657,8 +665,227 @@ export function ProjectsView({
     const target = cancelTarget
     const reason = cancelReason.trim() || undefined
     setCancelTarget(null)
+    setSelectedIdeaName(null)
     setCancelReason('')
     await onRunAction(() => api.cancelIdea(target.name, reason))
+  }
+
+  const openPromoteModal = (idea: IdeaSummary) => {
+    setPromoteTarget(idea)
+    setPromoteArea(snapshot.areas[0] ?? '个人')
+    setPromoteDeadline('')
+    setPromoteGoal('')
+  }
+
+  const openCancelModal = (idea: IdeaSummary) => {
+    setCancelTarget(idea)
+    setCancelReason('')
+  }
+
+  const modals = (
+    <>
+      {/* Modal: New Project */}
+      {showNewProject && (
+        <div className="lw-backdrop lw-backdrop-center" onClick={() => setShowNewProject(false)}>
+          <form
+            className="lw-modal"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => void handleCreateProject(e)}
+          >
+            <div className="lw-panel-header">
+              <strong>新建项目</strong>
+              <button
+                type="button"
+                className="lw-icon-btn"
+                onClick={() => setShowNewProject(false)}
+              >
+                <IconX />
+              </button>
+            </div>
+            <div className="lw-panel-body lw-stack" style={{ gap: 12 }}>
+              <div>
+                <label className="lw-field-label">名称</label>
+                <input
+                  className="lw-input"
+                  value={projName}
+                  onChange={(e) => setProjName(e.target.value)}
+                  autoFocus
+                  required
+                />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label className="lw-field-label">领域</label>
+                  <select
+                    className="lw-select"
+                    value={projArea}
+                    onChange={(e) => setProjArea(e.target.value)}
+                  >
+                    {snapshot.areas.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="lw-field-label">截止日期（可选）</label>
+                  <input
+                    type="date"
+                    className="lw-input"
+                    value={projDeadline}
+                    onChange={(e) => setProjDeadline(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="lw-field-label">目标</label>
+                <textarea
+                  className="lw-textarea"
+                  value={projGoal}
+                  onChange={(e) => setProjGoal(e.target.value)}
+                  placeholder="可选"
+                />
+              </div>
+            </div>
+            <div className="lw-panel-footer">
+              <button
+                type="button"
+                className="lw-btn lw-btn-ghost"
+                onClick={() => setShowNewProject(false)}
+              >
+                取消
+              </button>
+              <button type="submit" className="lw-btn lw-btn-primary">
+                创建
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Promote Idea */}
+      {promoteTarget && (
+        <div className="lw-backdrop lw-backdrop-center" onClick={() => setPromoteTarget(null)}>
+          <form
+            className="lw-modal"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => void handlePromote(e)}
+          >
+            <div className="lw-panel-header">
+              <strong>立项：{promoteTarget.name}</strong>
+              <button type="button" className="lw-icon-btn" onClick={() => setPromoteTarget(null)}>
+                <IconX />
+              </button>
+            </div>
+            <div className="lw-panel-body lw-stack" style={{ gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div>
+                  <label className="lw-field-label">领域</label>
+                  <select
+                    className="lw-select"
+                    value={promoteArea}
+                    onChange={(e) => setPromoteArea(e.target.value)}
+                  >
+                    {snapshot.areas.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="lw-field-label">截止日期（可选）</label>
+                  <input
+                    type="date"
+                    className="lw-input"
+                    value={promoteDeadline}
+                    onChange={(e) => setPromoteDeadline(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="lw-field-label">目标</label>
+                <textarea
+                  className="lw-textarea"
+                  value={promoteGoal}
+                  onChange={(e) => setPromoteGoal(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="lw-panel-footer">
+              <button
+                type="button"
+                className="lw-btn lw-btn-ghost"
+                onClick={() => setPromoteTarget(null)}
+              >
+                取消
+              </button>
+              <button type="submit" className="lw-btn lw-btn-primary">
+                确认立项
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* Modal: Cancel Idea */}
+      {cancelTarget && (
+        <div className="lw-backdrop lw-backdrop-center" onClick={() => setCancelTarget(null)}>
+          <form
+            className="lw-modal"
+            onClick={(e) => e.stopPropagation()}
+            onSubmit={(e) => void handleCancelIdea(e)}
+          >
+            <div className="lw-panel-header">
+              <strong>放弃想法：{cancelTarget.name}</strong>
+              <button type="button" className="lw-icon-btn" onClick={() => setCancelTarget(null)}>
+                <IconX />
+              </button>
+            </div>
+            <div className="lw-panel-body">
+              <label className="lw-field-label">原因（可选，将移入归档）</label>
+              <textarea
+                className="lw-textarea"
+                value={cancelReason}
+                onChange={(e) => setCancelReason(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="lw-panel-footer">
+              <button
+                type="button"
+                className="lw-btn lw-btn-ghost"
+                onClick={() => setCancelTarget(null)}
+              >
+                取消
+              </button>
+              <button type="submit" className="lw-btn lw-btn-danger">
+                归档放弃
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </>
+  )
+
+  // ==================== FULL-PAGE THINGS 3 IDEA EVALUATION VIEW ====================
+  if (activeIdea) {
+    return (
+      <>
+        <IdeaDetailView
+          idea={activeIdea}
+          todayIso={snapshot.date}
+          onBack={() => setSelectedIdeaName(null)}
+          onPromote={openPromoteModal}
+          onCancel={openCancelModal}
+          onOpenFile={onOpenFile}
+          onRunAction={onRunAction}
+        />
+        {modals}
+      </>
+    )
   }
 
   // ==================== FULL-PAGE THINGS 3 PROJECT DETAIL VIEW ====================
@@ -1509,7 +1736,7 @@ export function ProjectsView({
               <div
                 key={idea.relPath}
                 className="lw-project-row"
-                onClick={() => onOpenFile(idea.relPath)}
+                onClick={() => setSelectedIdeaName(idea.name)}
               >
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="lw-row" style={{ gap: 9 }}>
@@ -1543,22 +1770,14 @@ export function ProjectsView({
                   <button
                     type="button"
                     className="lw-btn lw-btn-sm lw-btn-primary"
-                    onClick={() => {
-                      setPromoteTarget(idea)
-                      setPromoteArea(snapshot.areas[0] ?? '个人')
-                      setPromoteDeadline('')
-                      setPromoteGoal('')
-                    }}
+                    onClick={() => openPromoteModal(idea)}
                   >
                     立项
                   </button>
                   <button
                     type="button"
                     className="lw-btn lw-btn-sm lw-btn-ghost"
-                    onClick={() => {
-                      setCancelTarget(idea)
-                      setCancelReason('')
-                    }}
+                    onClick={() => openCancelModal(idea)}
                   >
                     放弃
                   </button>
@@ -1647,189 +1866,7 @@ export function ProjectsView({
         </div>
       )}
 
-      {/* Modal: New Project */}
-      {showNewProject && (
-        <div className="lw-backdrop lw-backdrop-center" onClick={() => setShowNewProject(false)}>
-          <form
-            className="lw-modal"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => void handleCreateProject(e)}
-          >
-            <div className="lw-panel-header">
-              <strong>新建项目</strong>
-              <button
-                type="button"
-                className="lw-icon-btn"
-                onClick={() => setShowNewProject(false)}
-              >
-                <IconX />
-              </button>
-            </div>
-            <div className="lw-panel-body lw-stack" style={{ gap: 12 }}>
-              <div>
-                <label className="lw-field-label">名称</label>
-                <input
-                  className="lw-input"
-                  value={projName}
-                  onChange={(e) => setProjName(e.target.value)}
-                  autoFocus
-                  required
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label className="lw-field-label">领域</label>
-                  <select
-                    className="lw-select"
-                    value={projArea}
-                    onChange={(e) => setProjArea(e.target.value)}
-                  >
-                    {snapshot.areas.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="lw-field-label">截止日期（可选）</label>
-                  <input
-                    type="date"
-                    className="lw-input"
-                    value={projDeadline}
-                    onChange={(e) => setProjDeadline(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="lw-field-label">目标</label>
-                <textarea
-                  className="lw-textarea"
-                  value={projGoal}
-                  onChange={(e) => setProjGoal(e.target.value)}
-                  placeholder="可选"
-                />
-              </div>
-            </div>
-            <div className="lw-panel-footer">
-              <button
-                type="button"
-                className="lw-btn lw-btn-ghost"
-                onClick={() => setShowNewProject(false)}
-              >
-                取消
-              </button>
-              <button type="submit" className="lw-btn lw-btn-primary">
-                创建
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Modal: Promote Idea */}
-      {promoteTarget && (
-        <div className="lw-backdrop lw-backdrop-center" onClick={() => setPromoteTarget(null)}>
-          <form
-            className="lw-modal"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => void handlePromote(e)}
-          >
-            <div className="lw-panel-header">
-              <strong>立项：{promoteTarget.name}</strong>
-              <button type="button" className="lw-icon-btn" onClick={() => setPromoteTarget(null)}>
-                <IconX />
-              </button>
-            </div>
-            <div className="lw-panel-body lw-stack" style={{ gap: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <div>
-                  <label className="lw-field-label">领域</label>
-                  <select
-                    className="lw-select"
-                    value={promoteArea}
-                    onChange={(e) => setPromoteArea(e.target.value)}
-                  >
-                    {snapshot.areas.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="lw-field-label">截止日期（可选）</label>
-                  <input
-                    type="date"
-                    className="lw-input"
-                    value={promoteDeadline}
-                    onChange={(e) => setPromoteDeadline(e.target.value)}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="lw-field-label">目标</label>
-                <textarea
-                  className="lw-textarea"
-                  value={promoteGoal}
-                  onChange={(e) => setPromoteGoal(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="lw-panel-footer">
-              <button
-                type="button"
-                className="lw-btn lw-btn-ghost"
-                onClick={() => setPromoteTarget(null)}
-              >
-                取消
-              </button>
-              <button type="submit" className="lw-btn lw-btn-primary">
-                确认立项
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* Modal: Cancel Idea */}
-      {cancelTarget && (
-        <div className="lw-backdrop lw-backdrop-center" onClick={() => setCancelTarget(null)}>
-          <form
-            className="lw-modal"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => void handleCancelIdea(e)}
-          >
-            <div className="lw-panel-header">
-              <strong>放弃想法：{cancelTarget.name}</strong>
-              <button type="button" className="lw-icon-btn" onClick={() => setCancelTarget(null)}>
-                <IconX />
-              </button>
-            </div>
-            <div className="lw-panel-body">
-              <label className="lw-field-label">原因（可选，将移入归档）</label>
-              <textarea
-                className="lw-textarea"
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                autoFocus
-              />
-            </div>
-            <div className="lw-panel-footer">
-              <button
-                type="button"
-                className="lw-btn lw-btn-ghost"
-                onClick={() => setCancelTarget(null)}
-              >
-                取消
-              </button>
-              <button type="submit" className="lw-btn lw-btn-danger">
-                归档放弃
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
+      {modals}
     </div>
   )
 }

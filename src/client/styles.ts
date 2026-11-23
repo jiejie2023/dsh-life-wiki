@@ -35,6 +35,8 @@ const CSS = `
   --lw-accent-soft: rgba(38, 120, 246, 0.11);
   --lw-accent-text: #1a62d6;
   --lw-gold: #f2b705;
+  --lw-success: #219664;
+  --lw-success-soft: rgba(46, 182, 125, 0.12);
   --lw-warn: #d98a00;
   --lw-warn-soft: rgba(217, 138, 0, 0.12);
   --lw-danger: #d94343;
@@ -77,6 +79,8 @@ const CSS = `
   --lw-accent-soft: rgba(76, 146, 255, 0.16);
   --lw-accent-text: #82b5ff;
   --lw-gold: #f5c23b;
+  --lw-success: #42cc90;
+  --lw-success-soft: rgba(46, 182, 125, 0.18);
   --lw-warn: #f0ab3a;
   --lw-warn-soft: rgba(240, 171, 58, 0.16);
   --lw-danger: #eb6a6a;
@@ -1144,6 +1148,88 @@ const CSS = `
   background: var(--lw-surface);
   color: var(--lw-text);
   box-shadow: var(--lw-shadow-focus);
+}
+
+/* Idea full-page evaluation editorial form */
+.lw-idea-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lw-idea-q {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--lw-muted);
+  margin-bottom: 2px;
+}
+
+.lw-idea-field {
+  width: calc(100% + 16px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--lw-text);
+  font-size: 14px;
+  line-height: 1.65;
+  font-family: inherit;
+  padding: 5px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+  transition: background 0.14s, box-shadow 0.14s;
+}
+
+.lw-idea-field::placeholder {
+  color: var(--lw-muted);
+  opacity: 0.7;
+}
+
+.lw-idea-field:hover {
+  background: var(--lw-subtle);
+}
+
+.lw-idea-field:focus {
+  background: var(--lw-surface);
+  box-shadow: var(--lw-shadow-focus);
+}
+
+.lw-verdict-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--lw-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+
+.lw-verdict-btn:hover {
+  background: var(--lw-hover);
+  color: var(--lw-text-2);
+}
+
+.lw-verdict-btn.active-go {
+  background: var(--lw-success-soft);
+  color: var(--lw-success);
+  font-weight: 600;
+}
+
+.lw-verdict-btn.active-think {
+  background: var(--lw-accent-soft);
+  color: var(--lw-accent-text);
+  font-weight: 600;
+}
+
+.lw-verdict-btn.active-no {
+  background: var(--lw-danger-soft);
+  color: var(--lw-danger);
+  font-weight: 600;
 }
 
 /* Diary photos */

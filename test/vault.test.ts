@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { clearSampleData, initializeVault, inspectDirectory } from '../src/core/scaffold.ts'
 import { createLifeWikiEngine } from '../src/core/vault.ts'
+import { applyIdeaSections, parseIdeaSections } from '../src/client/ideaMarkdown.ts'
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), 'life-wiki-test-'))
@@ -157,5 +158,57 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
       assert.equal(snap.reviewCenter.weekDiaries.length, 1)
       assert.equal(snap.knowledge.wikiPages.length, 1)
     })
+  })
+
+  it('parses and updates idea evaluation sections losslessly while preserving frontmatter and other sections', () => {
+    const sample = [
+      '---',
+      'status: idea',
+      'area: ',
+      'created: 2026-11-24',
+      'deadline: ',
+      '---',
+      '',
+      '## 想法',
+      '',
+      '整理年底复盘清单',
+      '',
+      '## 动机',
+      '',
+      '**为什么想做：** 每年年底容易一晃而过',
+      '**不做会怎样：** 重复踩坑',
+      '**要付出什么：** 2 小时',
+      '**做完能带来什么真实变化：** 带着清晰方向进入下一年',
+      '',
+      '## 认知',
+      '',
+      '先翻过去三个月日记',
+      '',
+      '## 判断',
+      '',
+      '再想想：周末再确认。（2026-11-20）',
+      '',
+      '## 目标',
+      '',
+      '保留原目标',
+      '',
+    ].join('\n')
+
+    const parsed = parseIdeaSections(sample)
+    assert.equal(parsed.idea, '整理年底复盘清单')
+    assert.equal(parsed.why, '每年年底容易一晃而过')
+    assert.equal(parsed.realChange, '带着清晰方向进入下一年')
+    assert.equal(parsed.verdict, '再想想')
+    assert.equal(parsed.judgmentReason, '周末再确认')
+
+    const updated = applyIdeaSections(
+      sample,
+      { ...parsed, cost: '半天安静时间', verdict: '做', judgmentReason: '投入小回报高' },
+      '2026-11-24',
+    )
+    assert.match(updated, /created: 2026-11-24/)
+    assert.match(updated, /\*\*要付出什么：\*\* 半天安静时间/)
+    assert.match(updated, /做：投入小回报高。（2026-11-20）/)
+    assert.match(updated, /## 目标\n\n保留原目标/)
   })
 })
