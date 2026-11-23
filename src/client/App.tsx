@@ -455,10 +455,6 @@ export function LifeWikiApp() {
             <ProjectsView
               snapshot={snapshot}
               onOpenFile={(rel, opts) => setDrawerFile({ path: rel, edit: opts?.edit })}
-              onJumpToToday={() => {
-                setSelectedDate(localTodayIso())
-                setActiveTab('today')
-              }}
               onRunAction={runAction}
             />
           )}

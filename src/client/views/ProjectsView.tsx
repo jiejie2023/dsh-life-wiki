@@ -32,7 +32,6 @@ type DetailTab = 'plan' | 'tasks' | 'resources' | 'reviews' | 'outputs'
 interface ProjectsViewProps {
   snapshot: BoardSnapshot
   onOpenFile: (relPath: string, opts?: { edit?: boolean }) => void
-  onJumpToToday: () => void
   onRunAction: RunActionFn
 }
 
@@ -95,7 +94,6 @@ function stripLeadingNumber(text: string): string {
 export function ProjectsView({
   snapshot,
   onOpenFile,
-  onJumpToToday,
   onRunAction,
 }: ProjectsViewProps) {
   const [subTab, setSubTab] = useState<LifeCycleTab>('doing')
@@ -932,36 +930,22 @@ export function ProjectsView({
                 恢复项目
               </button>
             ) : (
-              <>
-                <button
-                  type="button"
-                  className="lw-btn lw-btn-sm lw-btn-ghost"
-                  onClick={() =>
-                    void onRunAction(
-                      async () => {
-                        await api.archiveProject(activeDetail.name, 'done')
-                        setSelectedProjectName(null)
-                        setSubTab('archived')
-                      },
-                      { toast: '已归档' },
-                    )
-                  }
-                >
-                  归档
-                </button>
-                <button
-                  type="button"
-                  className="lw-btn lw-btn-sm lw-btn-primary"
-                  onClick={() =>
-                    void onRunAction(async () => {
-                      await api.createTaskFile(activeDetail.name)
-                      onJumpToToday()
-                    })
-                  }
-                >
-                  今日开做
-                </button>
-              </>
+              <button
+                type="button"
+                className="lw-btn lw-btn-sm lw-btn-ghost"
+                onClick={() =>
+                  void onRunAction(
+                    async () => {
+                      await api.archiveProject(activeDetail.name, 'done')
+                      setSelectedProjectName(null)
+                      setSubTab('archived')
+                    },
+                    { toast: '已归档' },
+                  )
+                }
+              >
+                归档
+              </button>
             )}
             <button
               type="button"
