@@ -50,7 +50,7 @@
 1. 从 [GitHub Releases](https://github.com/jiejie2023/dsh-life-wiki/releases) 下载最新的 `dsh-life-wiki-<version>.tgz`。
 2. 打开 DSH Desktop → **插件 → 添加插件**，输入本地包路径，例如：
    ```text
-   file:/path/to/dsh-life-wiki-0.3.0.tgz
+   file:/path/to/dsh-life-wiki-0.1.0.tgz
    ```
 3. 重启或刷新 DSH 后，点击左侧栏 **Life Wiki**，新建或打开本地目录即可使用。
 
@@ -66,7 +66,7 @@ npm run test:all
 npm pack
 ```
 
-- 打包安装：在 DSH 添加 `file:/path/to/dsh-life-wiki/dsh-life-wiki-0.3.0.tgz`。
+- 打包安装：在 DSH 添加 `file:/path/to/dsh-life-wiki/dsh-life-wiki-0.1.0.tgz`。
 - 本地联动开发：在 DSH 添加 `link:/path/to/dsh-life-wiki`，修改前端后运行 `npm run build` 即可热重载（修改后端 `src/host` 或 `src/core` 后需从系统托盘彻底退出并重开 DSH）。
 
 ## 独立浏览器预览
