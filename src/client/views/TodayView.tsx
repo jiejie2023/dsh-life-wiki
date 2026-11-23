@@ -48,6 +48,10 @@ const PRIORITY_ORDER: Record<TaskPriority, number> = {
   low: 2,
 }
 
+function normalizePriority(p: unknown): TaskPriority {
+  return p === 'high' || p === 'low' ? p : 'medium'
+}
+
 function priorityLabel(p: TaskPriority): string {
   return p === 'high' ? '高' : p === 'low' ? '低' : '中'
 }
@@ -486,7 +490,8 @@ export function TodayView({
             // Sort strictly by priority (高 -> 中 -> 低), tie-break by original order
             const sortedTasks = [...group.tasks].sort(
               (a, b) =>
-                PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+                PRIORITY_ORDER[normalizePriority(a.priority)] -
+                  PRIORITY_ORDER[normalizePriority(b.priority)] ||
                 a.lineIndex - b.lineIndex,
             )
 
@@ -578,6 +583,7 @@ export function TodayView({
                       const rowKey = `${group.fileRelPath}:${task.lineIndex}`
                       const durOpen = durationOpenKey === rowKey
                       const prioOpen = prioOpenKey === rowKey
+                      const taskPrio = normalizePriority(task.priority)
                       const displayText = cleanTaskDisplayText(task.text, task.minutes !== null)
 
                       const applyDuration = (mins: number | null) => {
@@ -630,11 +636,11 @@ export function TodayView({
                               ) : (
                                 <button
                                   type="button"
-                                  className={`lw-prio-btn ${task.priority}`}
+                                  className={`lw-prio-btn ${taskPrio}`}
                                   title="点击修改优先级"
                                   onClick={() => setPrioOpenKey(rowKey)}
                                 >
-                                  {priorityLabel(task.priority)}
+                                  {priorityLabel(taskPrio)}
                                 </button>
                               )}
                             </div>
@@ -722,7 +728,7 @@ export function TodayView({
                       )
                     })}
 
-                    {/* Add Task Row with inline mandatory priority picker */}
+                    {/* Add Task Row — priority picker appears cleanly once typing */}
                     <form
                       className="lw-item-row"
                       style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
@@ -746,42 +752,45 @@ export function TodayView({
                         }
                         placeholder="添加任务"
                       />
-                      <div
-                        className="lw-row"
-                        style={{ gap: 8, flexShrink: 0 }}
-                        data-new-prio-menu
-                      >
-                        {newPrioOpenProject === group.projectName ? (
-                          <div className="lw-prio-picker">
-                            {PRIORITY_OPTIONS.map((opt) => (
-                              <button
-                                key={opt.value}
-                                type="button"
-                                className={`lw-prio-btn ${opt.value}`}
-                                onClick={() => {
-                                  setNewTaskPriority((prev) => ({
-                                    ...prev,
-                                    [group.projectName]: opt.value,
-                                  }))
-                                  setNewPrioOpenProject(null)
-                                }}
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <button
-                            type="button"
-                            className={`lw-prio-btn ${draftPrio}`}
-                            title="新任务优先级（点击切换高/中/低）"
-                            onClick={() => setNewPrioOpenProject(group.projectName)}
-                          >
-                            {priorityLabel(draftPrio)}
-                          </button>
-                        )}
-                        <span style={{ minWidth: 48 }} />
-                      </div>
+                      {((newTaskInputs[group.projectName] ?? '').trim() ||
+                        newPrioOpenProject === group.projectName) && (
+                        <div
+                          className="lw-row"
+                          style={{ gap: 8, flexShrink: 0 }}
+                          data-new-prio-menu
+                        >
+                          {newPrioOpenProject === group.projectName ? (
+                            <div className="lw-prio-picker">
+                              {PRIORITY_OPTIONS.map((opt) => (
+                                <button
+                                  key={opt.value}
+                                  type="button"
+                                  className={`lw-prio-btn ${opt.value}`}
+                                  onClick={() => {
+                                    setNewTaskPriority((prev) => ({
+                                      ...prev,
+                                      [group.projectName]: opt.value,
+                                    }))
+                                    setNewPrioOpenProject(null)
+                                  }}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              className={`lw-prio-btn ${draftPrio}`}
+                              title="新任务优先级（点击切换高/中/低）"
+                              onClick={() => setNewPrioOpenProject(group.projectName)}
+                            >
+                              {priorityLabel(draftPrio)}
+                            </button>
+                          )}
+                          <span style={{ minWidth: 48 }} />
+                        </div>
+                      )}
                     </form>
                   </div>
                 ) : mode === 'log' ? (

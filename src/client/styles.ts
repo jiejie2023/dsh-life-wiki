@@ -949,58 +949,58 @@ const CSS = `
   background: var(--lw-accent);
 }
 
-/* Single-character filled task priority badges (高 / 中 / 低) */
+/* Restrained Things 3 single-char priority badges (only 高 carries accent tint) */
 .lw-prio-btn {
   appearance: none;
-  border: none;
+  border: 1px solid transparent;
   width: 22px;
   height: 22px;
   padding: 0;
   border-radius: 6px;
   font-size: 11.5px;
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   flex-shrink: 0;
-  transition: transform 0.12s, filter 0.12s;
-}
-
-.lw-prio-btn:hover {
-  filter: brightness(0.95);
-  transform: scale(1.04);
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
 }
 
 .lw-prio-btn.high {
-  background: rgba(229, 72, 77, 0.14);
-  color: #d9383e;
+  background: rgba(229, 72, 77, 0.10);
+  color: #d6393f;
+  font-weight: 600;
+}
+
+.lw-prio-btn.high:hover {
+  background: rgba(229, 72, 77, 0.16);
 }
 
 .lw-prio-btn.medium {
-  background: rgba(240, 152, 25, 0.15);
-  color: #c27400;
+  background: var(--lw-subtle);
+  color: var(--lw-text-2);
+}
+
+.lw-prio-btn.medium:hover {
+  background: var(--lw-hover-strong);
+  color: var(--lw-text);
 }
 
 .lw-prio-btn.low {
-  background: rgba(38, 120, 246, 0.12);
-  color: #1f6ae0;
+  background: transparent;
+  color: var(--lw-muted);
+}
+
+.lw-prio-btn.low:hover {
+  background: var(--lw-subtle);
+  color: var(--lw-text-2);
 }
 
 .lw-root[data-lw-theme="dark"] .lw-prio-btn.high {
-  background: rgba(242, 99, 104, 0.2);
+  background: rgba(242, 99, 104, 0.18);
   color: #ff8589;
-}
-
-.lw-root[data-lw-theme="dark"] .lw-prio-btn.medium {
-  background: rgba(245, 178, 66, 0.2);
-  color: #f6c05e;
-}
-
-.lw-root[data-lw-theme="dark"] .lw-prio-btn.low {
-  background: rgba(76, 146, 255, 0.2);
-  color: #82b5ff;
 }
 
 .lw-prio-picker {
@@ -1011,6 +1011,10 @@ const CSS = `
   border-radius: 7px;
   background: var(--lw-surface);
   box-shadow: var(--lw-shadow-lg);
+}
+
+.lw-prio-picker .lw-prio-btn.low {
+  background: var(--lw-subtle);
 }
 
 /* Diary photos */
