@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type {
   BoardSnapshot,
   ProjectTaskGroup,
@@ -8,6 +8,7 @@ import type {
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
 import {
+  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
   IconPlus,
@@ -55,17 +56,47 @@ export function TodayView({
 }: TodayViewProps) {
   const [diaryText, setDiaryText] = useState('')
   const [revealedProjects, setRevealedProjects] = useState<Record<string, boolean>>({})
+  const [focusProject, setFocusProject] = useState<string | null>(null)
+  const [addMenuOpen, setAddMenuOpen] = useState(false)
   const [warningsModalOpen, setWarningsModalOpen] = useState(false)
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   const { diary, groups, formatWarnings } = snapshot.today
   const isToday = selectedDate === todayLocalIso()
 
+  useEffect(() => {
+    setRevealedProjects({})
+    setFocusProject(null)
+    setAddMenuOpen(false)
+  }, [selectedDate])
+
+  useEffect(() => {
+    if (!addMenuOpen) return
+    const onPointerDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('[data-add-project-menu]')) setAddMenuOpen(false)
+    }
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAddMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [addMenuOpen])
+
   const { activeGroups, idleGroups } = useMemo(() => {
     const active: ProjectTaskGroup[] = []
     const idle: ProjectTaskGroup[] = []
     for (const g of groups) {
-      if (g.exists || g.projectStatus === 'doing' || revealedProjects[g.projectName]) {
+      const hasContent =
+        g.tasks.length > 0 ||
+        g.logs.length > 0 ||
+        g.reflections.length > 0 ||
+        (g.exists && !g.valid)
+      if (hasContent || revealedProjects[g.projectName]) {
         active.push(g)
       } else {
         idle.push(g)
@@ -371,7 +402,13 @@ export function TodayView({
 
       {/* Active Project Task Sections */}
       {activeGroups.length === 0 ? (
-        <div className="lw-empty">还没有进行中的项目，去「项目」页新建一个吧。</div>
+        <div className="lw-empty">
+          {groups.length === 0
+            ? '还没有项目，去「项目」页新建一个吧。'
+            : isToday
+              ? '今天暂无任务。'
+              : '这一天暂无任务。'}
+        </div>
       ) : (
         <div className="lw-stack" style={{ gap: 28 }}>
           {activeGroups.map((group) => (
@@ -379,6 +416,7 @@ export function TodayView({
               key={group.projectName}
               group={group}
               title={group.projectName}
+              autoFocusAdd={focusProject === group.projectName}
               onToggleTask={handleToggleTask}
               onSetMinutes={handleSetMinutes}
               onSetPriority={handleSetPriority}
@@ -391,23 +429,56 @@ export function TodayView({
         </div>
       )}
 
-      {/* Idle Projects quiet strip */}
+      {/* Quiet picker to add tasks for projects that have none today */}
       {idleGroups.length > 0 && (
-        <div className="lw-row" style={{ paddingTop: 4 }}>
-          <span className="lw-muted">其他项目：</span>
-          {idleGroups.map((g) => (
+        <div style={{ paddingTop: 4 }}>
+          <div className="lw-menu-wrap" data-add-project-menu>
             <button
-              key={g.projectName}
               type="button"
               className="lw-btn lw-btn-sm lw-btn-ghost"
-              onClick={() =>
-                setRevealedProjects((prev) => ({ ...prev, [g.projectName]: true }))
-              }
+              style={{ color: 'var(--lw-text-3)', paddingLeft: 2 }}
+              onClick={() => setAddMenuOpen((v) => !v)}
             >
-              <IconPlus size={12} />
-              {g.projectName}
+              <IconPlus size={13} />
+              <span>添加项目任务</span>
+              <IconChevronDown size={12} />
             </button>
-          ))}
+
+            {addMenuOpen && (
+              <div
+                className="lw-menu"
+                role="menu"
+                style={{
+                  left: 0,
+                  right: 'auto',
+                  minWidth: 200,
+                  maxHeight: 260,
+                  overflowY: 'auto',
+                }}
+              >
+                {idleGroups.map((g) => (
+                  <button
+                    key={g.projectName}
+                    type="button"
+                    role="menuitem"
+                    className="lw-menu-item"
+                    onClick={() => {
+                      setAddMenuOpen(false)
+                      setRevealedProjects((prev) => ({ ...prev, [g.projectName]: true }))
+                      setFocusProject(g.projectName)
+                    }}
+                  >
+                    <span
+                      className={`lw-status-dot ${g.projectStatus === 'doing' ? 'doing' : 'todo'}`}
+                    />
+                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {g.projectName}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 

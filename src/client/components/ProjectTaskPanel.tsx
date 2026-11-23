@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import type {
   ProjectTaskGroup,
   TaskFileStatus,
@@ -59,6 +59,7 @@ export interface ProjectTaskPanelProps {
   /** Optional custom left header control (e.g., compact date switcher in Project Tasks tab). */
   headerLeft?: React.ReactNode
   readOnly?: boolean
+  autoFocusAdd?: boolean
   onToggleTask: (group: ProjectTaskGroup, lineIndex: number, minutes?: number) => void
   onSetMinutes: (group: ProjectTaskGroup, lineIndex: number, minutes: number | null) => void
   onSetPriority: (group: ProjectTaskGroup, lineIndex: number, priority: TaskPriority) => void
@@ -73,6 +74,7 @@ export function ProjectTaskPanel({
   title,
   headerLeft,
   readOnly = false,
+  autoFocusAdd = false,
   onToggleTask,
   onSetMinutes,
   onSetPriority,
@@ -81,7 +83,9 @@ export function ProjectTaskPanel({
   onAppendNote,
   onOpenFile,
 }: ProjectTaskPanelProps) {
-  const [mode, setMode] = useState<'task' | 'log' | 'reflection'>('task')
+  const [mode, setMode] = useState<'task' | 'log' | 'reflection'>(() =>
+    group.tasks.length === 0 && group.logs.length > 0 ? 'log' : 'task',
+  )
   const [newTaskText, setNewTaskText] = useState('')
   const [draftPrio, setDraftPrio] = useState<TaskPriority>('medium')
   const [newPrioOpen, setNewPrioOpen] = useState(false)
@@ -91,8 +95,10 @@ export function ProjectTaskPanel({
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [logInput, setLogInput] = useState('')
   const [reflectionInput, setReflectionInput] = useState('')
+  const addInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    setMode(group.tasks.length === 0 && group.logs.length > 0 ? 'log' : 'task')
     setNewTaskText('')
     setNewPrioOpen(false)
     setPrioOpenKey(null)
@@ -102,6 +108,12 @@ export function ProjectTaskPanel({
     setLogInput('')
     setReflectionInput('')
   }, [group.fileRelPath])
+
+  useEffect(() => {
+    if (autoFocusAdd && mode === 'task') {
+      addInputRef.current?.focus()
+    }
+  }, [autoFocusAdd, mode])
 
   useEffect(() => {
     if (!statusMenuOpen && !durationOpenKey && !prioOpenKey && !newPrioOpen) return
@@ -421,6 +433,7 @@ export function ProjectTaskPanel({
                 <IconPlus size={14} />
               </span>
               <input
+                ref={addInputRef}
                 className="lw-inline-input"
                 style={{ flex: 1, padding: 0, fontSize: 13.5 }}
                 value={newTaskText}
