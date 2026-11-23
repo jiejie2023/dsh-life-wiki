@@ -5,16 +5,23 @@ import { MarkdownView } from '../components/MarkdownView.tsx'
 
 interface FileDrawerProps {
   relPath: string
+  initialEdit?: boolean
   onClose: () => void
   onSaved: () => Promise<void>
   onToast: (msg: string, isError?: boolean) => void
 }
 
-export function FileDrawer({ relPath, onClose, onSaved, onToast }: FileDrawerProps) {
+export function FileDrawer({
+  relPath,
+  initialEdit = false,
+  onClose,
+  onSaved,
+  onToast,
+}: FileDrawerProps) {
   const [content, setContent] = useState('')
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
-  const [editing, setEditing] = useState(false)
+  const [editing, setEditing] = useState(initialEdit)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
@@ -23,7 +30,7 @@ export function FileDrawer({ relPath, onClose, onSaved, onToast }: FileDrawerPro
     let active = true
     setLoading(true)
     setError(null)
-    setEditing(false)
+    setEditing(initialEdit)
     api
       .readFile(relPath)
       .then((res) => {
@@ -41,7 +48,7 @@ export function FileDrawer({ relPath, onClose, onSaved, onToast }: FileDrawerPro
     return () => {
       active = false
     }
-  }, [relPath])
+  }, [relPath, initialEdit])
 
   const dirty = editing && draft !== content
 

@@ -47,6 +47,7 @@ const CSS = `
   --lw-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   box-sizing: border-box;
+  position: relative;
   color-scheme: light;
   height: 100%;
   width: 100%;
@@ -699,9 +700,9 @@ const CSS = `
   }
 }
 
-/* Drawers & Modals */
+/* Drawers & Modals (pinned inside .lw-root so Electron window controls never overlap) */
 .lw-backdrop {
-  position: fixed;
+  position: absolute;
   inset: 0;
   z-index: 90;
   background: rgba(12, 12, 14, 0.34);
@@ -1351,7 +1352,7 @@ const CSS = `
 
 /* Toast (quiet) */
 .lw-toast {
-  position: fixed;
+  position: absolute;
   bottom: 20px;
   right: 22px;
   z-index: 120;

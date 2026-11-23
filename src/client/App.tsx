@@ -89,7 +89,7 @@ export function LifeWikiApp() {
   const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
   const [inboxOpen, setInboxOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [drawerFile, setDrawerFile] = useState<string | null>(null)
+  const [drawerFile, setDrawerFile] = useState<{ path: string; edit?: boolean } | null>(null)
   const [toast, setToast] = useState<{ text: string; isError: boolean } | null>(null)
 
   const snapshotRef = useRef<BoardSnapshot | null>(null)
@@ -445,7 +445,7 @@ export function LifeWikiApp() {
               snapshot={snapshot}
               selectedDate={selectedDate}
               onDateChange={(next) => setSelectedDate(next)}
-              onOpenFile={(rel) => setDrawerFile(rel)}
+              onOpenFile={(rel) => setDrawerFile({ path: rel })}
               onJumpToDiary={() => setActiveTab('diary')}
               onRunAction={runAction}
             />
@@ -454,7 +454,7 @@ export function LifeWikiApp() {
           {activeTab === 'projects' && (
             <ProjectsView
               snapshot={snapshot}
-              onOpenFile={(rel) => setDrawerFile(rel)}
+              onOpenFile={(rel, opts) => setDrawerFile({ path: rel, edit: opts?.edit })}
               onJumpToToday={() => {
                 setSelectedDate(localTodayIso())
                 setActiveTab('today')
@@ -467,7 +467,7 @@ export function LifeWikiApp() {
             <DiaryView
               snapshot={snapshot}
               defaultDate={selectedDate}
-              onOpenFile={(rel) => setDrawerFile(rel)}
+              onOpenFile={(rel) => setDrawerFile({ path: rel })}
               onRunAction={runAction}
             />
           )}
@@ -477,7 +477,7 @@ export function LifeWikiApp() {
               snapshot={snapshot}
               selectedWeek={selectedWeek ?? snapshot.reviewCenter.week}
               onWeekChange={(nextWeek) => setSelectedWeek(nextWeek)}
-              onOpenFile={(rel) => setDrawerFile(rel)}
+              onOpenFile={(rel) => setDrawerFile({ path: rel })}
               onRunAction={runAction}
             />
           )}
@@ -485,7 +485,7 @@ export function LifeWikiApp() {
           {activeTab === 'knowledge' && (
             <KnowledgeView
               snapshot={snapshot}
-              onOpenFile={(rel) => setDrawerFile(rel)}
+              onOpenFile={(rel) => setDrawerFile({ path: rel })}
               onRunAction={runAction}
             />
           )}
@@ -497,14 +497,15 @@ export function LifeWikiApp() {
           snapshot={snapshot}
           selectedDate={selectedDate}
           onClose={() => setInboxOpen(false)}
-          onOpenFile={(rel) => setDrawerFile(rel)}
+          onOpenFile={(rel) => setDrawerFile({ path: rel })}
           onRunAction={runAction}
         />
       )}
 
       {drawerFile && (
         <FileDrawer
-          relPath={drawerFile}
+          relPath={drawerFile.path}
+          initialEdit={Boolean(drawerFile.edit)}
           onClose={() => setDrawerFile(null)}
           onSaved={() => fetchSnapshot(selectedDate, selectedWeek, false)}
           onToast={showToast}
@@ -517,7 +518,7 @@ export function LifeWikiApp() {
           snapshot={snapshot}
           onClose={() => setSettingsOpen(false)}
           onSwitchVault={() => setSwitchingVault(true)}
-          onOpenFile={(rel) => setDrawerFile(rel)}
+          onOpenFile={(rel) => setDrawerFile({ path: rel })}
           onRunAction={runAction}
         />
       )}

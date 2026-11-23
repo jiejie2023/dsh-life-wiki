@@ -6,6 +6,7 @@ import { describe, it } from 'node:test'
 import { clearSampleData, initializeVault, inspectDirectory } from '../src/core/scaffold.ts'
 import { createLifeWikiEngine } from '../src/core/vault.ts'
 import { applyIdeaSections, parseIdeaSections } from '../src/client/ideaMarkdown.ts'
+import { applyReviewSections, parseReviewSections } from '../src/client/reviewMarkdown.ts'
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), 'life-wiki-test-'))
@@ -210,5 +211,46 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
     assert.match(updated, /\*\*要付出什么：\*\* 半天安静时间/)
     assert.match(updated, /做：投入小回报高。（2026-11-20）/)
     assert.match(updated, /## 目标\n\n保留原目标/)
+  })
+
+  it('parses and updates weekly review sections losslessly while preserving total hours', () => {
+    const sample = [
+      '---',
+      'status: draft',
+      '---',
+      '',
+      '## 本周',
+      '',
+      '1. ✅ 完成主页结构',
+      '',
+      '本周投入：1.5 小时',
+      '',
+      '## 原因',
+      '',
+      '- 花了些时间打磨文案',
+      '',
+      '## 经验',
+      '',
+      '- 先写纯文本再排版',
+      '',
+      '## 下周',
+      '',
+      '1. 补齐 3 个项目截图',
+      '',
+    ].join('\n')
+
+    const parsed = parseReviewSections(sample)
+    assert.equal(parsed.status, 'draft')
+    assert.equal(parsed.totalHoursLine, '本周投入：1.5 小时')
+    assert.equal(parsed.thisWeek, '1. ✅ 完成主页结构')
+
+    const updated = applyReviewSections(sample, {
+      ...parsed,
+      status: 'final',
+      lesson: '- 先写纯文本再排版\n- 每次改动做视觉验收',
+    })
+    assert.match(updated, /status: final/)
+    assert.match(updated, /本周投入：1\.5 小时/)
+    assert.match(updated, /每次改动做视觉验收/)
   })
 })

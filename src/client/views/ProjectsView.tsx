@@ -23,6 +23,7 @@ import {
 } from '../components/Icons.tsx'
 import { IdeaDetailView } from '../components/IdeaDetailView.tsx'
 import { MarkdownView } from '../components/MarkdownView.tsx'
+import { ProjectReviewPanel } from '../components/ProjectReviewPanel.tsx'
 import { ProjectTaskPanel, priorityLabel } from '../components/ProjectTaskPanel.tsx'
 
 type LifeCycleTab = 'doing' | 'todo' | 'pause' | 'ideas' | 'archived'
@@ -30,7 +31,7 @@ type DetailTab = 'plan' | 'tasks' | 'resources' | 'reviews' | 'outputs'
 
 interface ProjectsViewProps {
   snapshot: BoardSnapshot
-  onOpenFile: (relPath: string) => void
+  onOpenFile: (relPath: string, opts?: { edit?: boolean }) => void
   onJumpToToday: () => void
   onRunAction: RunActionFn
 }
@@ -290,6 +291,7 @@ export function ProjectsView({
       if (showNewProject) setShowNewProject(false)
       else if (promoteTarget) setPromoteTarget(null)
       else if (cancelTarget) setCancelTarget(null)
+      else if (document.querySelector('.lw-backdrop')) return
       else if (statusMenuOpen || areaMenuOpen || editingDateField || taskDateMenuOpen) {
         setStatusMenuOpen(false)
         setAreaMenuOpen(false)
@@ -1236,6 +1238,7 @@ export function ProjectsView({
                     detailTab === 'resources'
                       ? activeDetail.resourcesRelPath
                       : activeDetail.outputsRelPath,
+                    { edit: true },
                   )
                 }
               >
@@ -1243,25 +1246,26 @@ export function ProjectsView({
               </button>
             </div>
           )}
-          {detailTab === 'reviews' && !activeDetail.archived && (
-            <div className="lw-tabs-bar-right">
-              <button
-                type="button"
-                className="lw-btn lw-btn-sm lw-btn-ghost"
-                onClick={() =>
-                  void onRunAction(
-                    async () => {
-                      const res = await api.generateWeeklyReview(activeDetail.name, snapshot.week)
-                      onOpenFile(res.relPath)
-                    },
-                    { toast: '已生成本周复盘草稿' },
-                  )
-                }
-              >
-                生成本周草稿
-              </button>
-            </div>
-          )}
+          {detailTab === 'reviews' &&
+            !activeDetail.archived &&
+            !activeDetail.reviewFiles.some((r) => r.week === snapshot.week) && (
+              <div className="lw-tabs-bar-right">
+                <button
+                  type="button"
+                  className="lw-btn lw-btn-sm lw-btn-ghost"
+                  onClick={() =>
+                    void onRunAction(
+                      async () => {
+                        await api.generateWeeklyReview(activeDetail.name, snapshot.week)
+                      },
+                      { toast: `已生成 ${snapshot.week} 复盘草稿` },
+                    )
+                  }
+                >
+                  生成本周草稿
+                </button>
+              </div>
+            )}
         </div>
 
         {/* Detail Tab Body */}
@@ -1606,27 +1610,14 @@ export function ProjectsView({
           ) : (
             <div className="lw-empty">暂无记录，点右上角「编辑原文」添加。</div>
           )
-        ) : activeDetail.reviewFiles.length === 0 ? (
-          <div className="lw-empty">暂无周复盘，点右上角「生成本周草稿」自动汇总本周任务。</div>
         ) : (
-          <div className="lw-list">
-            {activeDetail.reviewFiles.map((rf) => (
-              <div
-                key={rf.relPath}
-                className="lw-project-row"
-                style={{ padding: '11px 12px' }}
-                onClick={() => onOpenFile(rf.relPath)}
-              >
-                <div className="lw-row" style={{ gap: 12 }}>
-                  <span className="lw-mono" style={{ fontSize: 13.5, fontWeight: 500 }}>
-                    {rf.week}
-                  </span>
-                  {rf.totalHoursText && <span className="lw-muted">{rf.totalHoursText}</span>}
-                </div>
-                <span className="lw-muted">{rf.status === 'final' ? '已定稿' : '草稿'}</span>
-              </div>
-            ))}
-          </div>
+          <ProjectReviewPanel
+            key={activeDetail.name}
+            project={activeDetail}
+            currentWeek={snapshot.week}
+            onOpenFile={onOpenFile}
+            onRunAction={onRunAction}
+          />
         )}
       </div>
     )
