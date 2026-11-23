@@ -83,6 +83,7 @@ export function LifeWikiApp() {
   const [switchingVault, setSwitchingVault] = useState(false)
 
   const [activeTab, setActiveTab] = useState<MainTab>('today')
+  const [projectsResetSignal, setProjectsResetSignal] = useState(0)
   const [selectedDate, setSelectedDate] = useState<string>(() => localTodayIso())
   const [selectedWeek, setSelectedWeek] = useState<string | undefined>(undefined)
 
@@ -94,6 +95,7 @@ export function LifeWikiApp() {
 
   const snapshotRef = useRef<BoardSnapshot | null>(null)
   snapshotRef.current = snapshot
+  const fetchSeqRef = useRef(0)
 
   const showToast = useCallback((text: string, isError = false) => {
     setToast({ text, isError })
@@ -138,11 +140,9 @@ export function LifeWikiApp() {
   useEffect(() => {
     if (typeof window === 'undefined') return
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
-      if (drawerFile) {
-        e.preventDefault()
-        setDrawerFile(null)
-      } else if (inboxOpen) {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (drawerFile) return
+      if (inboxOpen) {
         e.preventDefault()
         setInboxOpen(false)
       } else if (settingsOpen) {
@@ -159,9 +159,11 @@ export function LifeWikiApp() {
 
   const fetchSnapshot = useCallback(
     async (dateArg: string, weekArg: string | undefined, withSettings: boolean) => {
+      const seq = ++fetchSeqRef.current
       try {
         if (withSettings) {
           const s = await api.getSettings()
+          if (seq !== fetchSeqRef.current) return
           setSettings(s)
           if (!s.dataDir) {
             setSnapshot(null)
@@ -170,13 +172,15 @@ export function LifeWikiApp() {
           }
         }
         const snap = await api.getSnapshot(dateArg, weekArg)
+        if (seq !== fetchSeqRef.current) return
         setSnapshot(snap)
         setError(null)
         if (!weekArg) setSelectedWeek(snap.reviewCenter.week)
       } catch (err) {
+        if (seq !== fetchSeqRef.current) return
         setError(err instanceof Error ? err.message : String(err))
       } finally {
-        setInitialLoading(false)
+        if (seq === fetchSeqRef.current) setInitialLoading(false)
       }
     },
     [],
@@ -343,7 +347,12 @@ export function LifeWikiApp() {
                 key={key}
                 type="button"
                 className={`lw-nav-item ${activeTab === key ? 'active' : ''}`}
-                onClick={() => setActiveTab(key)}
+                onClick={() => {
+                  if (key === 'projects' && activeTab === 'projects') {
+                    setProjectsResetSignal((n) => n + 1)
+                  }
+                  setActiveTab(key)
+                }}
               >
                 {label}
               </button>
@@ -454,6 +463,7 @@ export function LifeWikiApp() {
           {activeTab === 'projects' && (
             <ProjectsView
               snapshot={snapshot}
+              resetSignal={projectsResetSignal}
               onOpenFile={(rel, opts) => setDrawerFile({ path: rel, edit: opts?.edit })}
               onRunAction={runAction}
             />

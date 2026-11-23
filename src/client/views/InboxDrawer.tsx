@@ -3,6 +3,7 @@ import type { BoardSnapshot } from '../../shared/types.ts'
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
 import { IconCheck, IconFile, IconX } from '../components/Icons.tsx'
+import { InlineText } from '../components/MarkdownView.tsx'
 
 interface InboxDrawerProps {
   snapshot: BoardSnapshot
@@ -118,15 +119,24 @@ export function InboxDrawer({
             <div className="lw-list">
               {pending.map((item) => (
                 <div key={item.lineIndex} className="lw-stack" style={{ gap: 4 }}>
-                  <div className="lw-item-row">
+                  <div className="lw-item-row lw-inbox-row">
                     <button
                       type="button"
                       className="lw-check"
                       style={{ marginTop: 3 }}
                       onClick={() => void handleToggle(item.lineIndex)}
                     />
-                    <div className="lw-item-title">{item.text}</div>
-                    <div className="lw-hover-actions">
+                    <div className="lw-item-title">
+                      <InlineText
+                        text={item.text}
+                        baseRelPath={snapshot.inbox.relPath}
+                        onOpenFile={(rel) => {
+                          onClose()
+                          onOpenFile(rel)
+                        }}
+                      />
+                    </div>
+                    <div className="lw-inbox-actions">
                       <button
                         type="button"
                         className="lw-btn lw-btn-sm lw-btn-ghost"
@@ -215,7 +225,7 @@ export function InboxDrawer({
               </button>
               {showDone &&
                 done.map((item) => (
-                  <div key={item.lineIndex} className="lw-item-row">
+                  <div key={item.lineIndex} className="lw-item-row lw-inbox-row">
                     <button
                       type="button"
                       className="lw-check checked"
@@ -224,9 +234,16 @@ export function InboxDrawer({
                       <IconCheck />
                     </button>
                     <span className="lw-item-title lw-item-done" style={{ fontSize: 13 }}>
-                      {item.text}
+                      <InlineText
+                        text={item.text}
+                        baseRelPath={snapshot.inbox.relPath}
+                        onOpenFile={(rel) => {
+                          onClose()
+                          onOpenFile(rel)
+                        }}
+                      />
                     </span>
-                    <div className="lw-hover-actions">
+                    <div className="lw-inbox-actions">
                       <button
                         type="button"
                         className="lw-icon-btn"

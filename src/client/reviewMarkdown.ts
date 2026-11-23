@@ -1,7 +1,7 @@
 import type { ReviewStatus } from '../shared/types.ts'
 
 export interface ReviewWeekItem {
-  done: boolean
+  done: boolean | null
   text: string
 }
 
@@ -112,7 +112,7 @@ export function parseReviewWeekLine(raw: string): ReviewWeekItem | null {
     const text = cleaned.replace(/^(?:❌|\[ \]|✗|×)\s*/i, '').trim()
     return text ? { done: false, text } : null
   }
-  return { done: true, text: cleaned }
+  return { done: null, text: cleaned }
 }
 
 function parsePlainList(sectionBody: string): string[] {
@@ -169,10 +169,17 @@ export function parseReviewSections(markdown: string): ReviewDraft {
 export function applyReviewSections(originalMarkdown: string, draft: ReviewDraft): string {
   let next = updateYamlStatus(originalMarkdown, draft.status)
 
+  let numberedIdx = 0
   const twLines = draft.thisWeekItems
     .map((item) => ({ ...item, text: item.text.trim() }))
     .filter((item) => item.text.length > 0)
-    .map((item, idx) => `${idx + 1}. ${item.done ? '✅' : '❌'} ${item.text}`)
+    .map((item) => {
+      if (item.done === null) {
+        return /^\*\*[^*]+\*\*$/.test(item.text) ? item.text : `- ${item.text}`
+      }
+      numberedIdx += 1
+      return `${numberedIdx}. ${item.done ? '✅' : '❌'} ${item.text}`
+    })
 
   if (draft.totalHoursLine) {
     if (twLines.length > 0) twLines.push('')

@@ -11,6 +11,7 @@ import {
   IconFile,
   IconPlus,
 } from './Icons.tsx'
+import { InlineText } from './MarkdownView.tsx'
 
 export const TASK_STATUS_OPTIONS: Array<{ value: TaskFileStatus; label: string }> = [
   { value: 'todo', label: '未开始' },
@@ -293,7 +294,11 @@ export function ProjectTaskPanel({
                 </button>
 
                 <div className={`lw-item-title ${task.checked ? 'lw-item-done' : ''}`}>
-                  {displayText}
+                  <InlineText
+                    text={displayText}
+                    baseRelPath={group.fileRelPath}
+                    onOpenFile={onOpenFile}
+                  />
                   {task.fromDate && (
                     <span className="lw-muted" style={{ marginLeft: 8 }}>
                       {task.fromDate}
@@ -481,7 +486,13 @@ export function ProjectTaskPanel({
               <span className="lw-bullet-slot">
                 <span className="lw-bullet-dot" />
               </span>
-              <div className="lw-item-title">{cleanDisplayBullet(l)}</div>
+              <div className="lw-item-title">
+                <InlineText
+                  text={cleanDisplayBullet(l)}
+                  baseRelPath={group.fileRelPath}
+                  onOpenFile={onOpenFile}
+                />
+              </div>
             </div>
           ))}
           {!readOnly && (
@@ -516,7 +527,13 @@ export function ProjectTaskPanel({
               <span className="lw-bullet-slot">
                 <span className="lw-bullet-dot reflection" />
               </span>
-              <div className="lw-item-title">{cleanDisplayBullet(r)}</div>
+              <div className="lw-item-title">
+                <InlineText
+                  text={cleanDisplayBullet(r)}
+                  baseRelPath={group.fileRelPath}
+                  onOpenFile={onOpenFile}
+                />
+              </div>
             </div>
           ))}
           {!readOnly && (

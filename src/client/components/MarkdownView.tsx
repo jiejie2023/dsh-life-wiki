@@ -6,27 +6,41 @@ interface MarkdownViewProps {
   baseRelPath?: string
   hideFrontmatter?: boolean
   onOpenImage?: (src: string) => void
+  onOpenFile?: (relPath: string) => void
 }
 
-function resolveRelativeAsset(baseRelPath: string | undefined, target: string): string {
-  const cleaned = target.trim().replace(/^<|>$/g, '')
-  if (/^https?:\/\//i.test(cleaned) || cleaned.startsWith('data:')) return cleaned
-  const normalizedTarget = cleaned.replace(/\\/g, '/')
+function resolveVaultRelPath(baseRelPath: string | undefined, target: string): string | null {
+  const withoutAnchor = target.trim().replace(/^<|>$/g, '').split('#')[0]?.trim() ?? ''
+  if (!withoutAnchor) return null
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(withoutAnchor)) return null
+  const normalizedTarget = withoutAnchor.replace(/\\/g, '/')
   if (
     normalizedTarget.startsWith('raw/') ||
     normalizedTarget.startsWith('projects/') ||
-    normalizedTarget.startsWith('wiki/')
+    normalizedTarget.startsWith('wiki/') ||
+    normalizedTarget.startsWith('system/')
   ) {
-    return rawFileUrl(normalizedTarget)
+    return normalizedTarget
   }
   const baseDir = baseRelPath ? baseRelPath.replace(/\\/g, '/').split('/').slice(0, -1) : []
   const segments = [...baseDir]
   for (const part of normalizedTarget.split('/')) {
     if (!part || part === '.') continue
-    if (part === '..') segments.pop()
-    else segments.push(part)
+    if (part === '..') {
+      if (segments.length === 0) return null
+      segments.pop()
+    } else {
+      segments.push(part)
+    }
   }
-  return rawFileUrl(segments.join('/'))
+  return segments.length > 0 ? segments.join('/') : null
+}
+
+function resolveRelativeAsset(baseRelPath: string | undefined, target: string): string {
+  const cleaned = target.trim().replace(/^<|>$/g, '')
+  if (/^https?:\/\//i.test(cleaned) || cleaned.startsWith('data:')) return cleaned
+  const resolved = resolveVaultRelPath(baseRelPath, cleaned)
+  return resolved ? rawFileUrl(resolved) : cleaned
 }
 
 function stripLegacyHtmlTags(text: string): string {
@@ -37,6 +51,7 @@ function renderInline(
   rawText: string,
   baseRelPath: string | undefined,
   onOpenImage?: (src: string) => void,
+  onOpenFile?: (relPath: string) => void,
 ): React.ReactNode[] {
   const text = stripLegacyHtmlTags(rawText)
   const nodes: React.ReactNode[] = []
@@ -60,15 +75,39 @@ function renderInline(
         />,
       )
     } else if (match[3] !== undefined && match[4] !== undefined) {
-      const href = match[4].trim()
+      const href = match[4].trim().replace(/^<|>$/g, '')
       if (/^https?:\/\//i.test(href)) {
         nodes.push(
-          <a key={`a-${key++}`} href={href} target="_blank" rel="noreferrer">
+          <a
+            key={`a-${key++}`}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+          >
             {match[3]}
           </a>,
         )
       } else {
-        nodes.push(<code key={`ref-${key++}`}>{match[3]}</code>)
+        const resolved = resolveVaultRelPath(baseRelPath, href)
+        if (onOpenFile && resolved && /\.(md|txt|json|yml|yaml)$/i.test(resolved)) {
+          nodes.push(
+            <button
+              key={`vl-${key++}`}
+              type="button"
+              className="lw-md-link"
+              title={resolved}
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenFile(resolved)
+              }}
+            >
+              {match[3]}
+            </button>,
+          )
+        } else {
+          nodes.push(<code key={`ref-${key++}`}>{match[3]}</code>)
+        }
       }
     } else if (match[5] !== undefined) {
       nodes.push(<code key={`code-${key++}`}>{match[5]}</code>)
@@ -83,11 +122,99 @@ function renderInline(
   return nodes
 }
 
+/** Lightweight inline Markdown renderer for task rows, plan items, review items, and inbox entries. */
+export function InlineText({
+  text,
+  baseRelPath,
+  onOpenFile,
+}: {
+  text: string
+  baseRelPath?: string
+  onOpenFile?: (relPath: string) => void
+}) {
+  const cleaned = stripLegacyHtmlTags(text)
+  const nodes: React.ReactNode[] = []
+  const tokenRe = /\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*/g
+  let lastIndex = 0
+  let match: RegExpExecArray | null
+  let key = 0
+
+  while ((match = tokenRe.exec(cleaned)) !== null) {
+    if (match.index > lastIndex) nodes.push(cleaned.slice(lastIndex, match.index))
+    if (match[1] !== undefined && match[2] !== undefined) {
+      const href = match[2].trim().replace(/^<|>$/g, '')
+      if (/^https?:\/\//i.test(href)) {
+        nodes.push(
+          <a
+            key={`a-${key++}`}
+            href={href}
+            target="_blank"
+            rel="noreferrer"
+            className="lw-inline-link"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {match[1]}
+          </a>,
+        )
+      } else {
+        const resolved = resolveVaultRelPath(baseRelPath, href)
+        if (onOpenFile && resolved && /\.(md|txt|json|yml|yaml)$/i.test(resolved)) {
+          nodes.push(
+            <button
+              key={`vl-${key++}`}
+              type="button"
+              className="lw-md-link"
+              title={resolved}
+              onClick={(e) => {
+                e.stopPropagation()
+                onOpenFile(resolved)
+              }}
+            >
+              {match[1]}
+            </button>,
+          )
+        } else {
+          nodes.push(
+            <code key={`ref-${key++}`} className="lw-inline-code">
+              {match[1]}
+            </code>,
+          )
+        }
+      }
+    } else if (match[3] !== undefined) {
+      nodes.push(
+        <code key={`code-${key++}`} className="lw-inline-code">
+          {match[3]}
+        </code>,
+      )
+    } else if (match[4] !== undefined) {
+      nodes.push(<strong key={`b-${key++}`}>{match[4]}</strong>)
+    }
+    lastIndex = tokenRe.lastIndex
+  }
+  if (lastIndex < cleaned.length) nodes.push(cleaned.slice(lastIndex))
+  return <>{nodes}</>
+}
+
+function isTableSeparatorLine(line: string): boolean {
+  const t = line.trim()
+  if (!t.includes('-')) return false
+  return /^\|?\s*:?-{3,}:?\s*(?:\|\s*:?-{3,}:?\s*)+\|?$/.test(t)
+}
+
+function splitTableRow(line: string): string[] {
+  let t = line.trim()
+  if (t.startsWith('|')) t = t.slice(1)
+  if (t.endsWith('|')) t = t.slice(0, -1)
+  return t.split('|').map((cell) => cell.trim())
+}
+
 export function MarkdownView({
   content,
   baseRelPath,
   hideFrontmatter,
   onOpenImage,
+  onOpenFile,
 }: MarkdownViewProps) {
   const normalized = content.replace(/\r\n/g, '\n')
   let body = normalized
@@ -133,10 +260,50 @@ export function MarkdownView({
       continue
     }
 
+    // GFM Table
+    if (
+      trimmed.includes('|') &&
+      i + 1 < lines.length &&
+      isTableSeparatorLine(lines[i + 1]!)
+    ) {
+      const headers = splitTableRow(trimmed)
+      i += 2
+      const rows: string[][] = []
+      while (i < lines.length && lines[i]!.trim() !== '' && lines[i]!.includes('|')) {
+        rows.push(splitTableRow(lines[i]!))
+        i += 1
+      }
+      blocks.push(
+        <div key={`tbl-${blockKey++}`} className="lw-md-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                {headers.map((h, ci) => (
+                  <th key={ci}>{renderInline(h, baseRelPath, onOpenImage, onOpenFile)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, ri) => (
+                <tr key={ri}>
+                  {headers.map((_, ci) => (
+                    <td key={ci}>
+                      {renderInline(row[ci] ?? '', baseRelPath, onOpenImage, onOpenFile)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      )
+      continue
+    }
+
     const hMatch = trimmed.match(/^(#{1,4})\s+(.+)$/)
     if (hMatch) {
       const level = hMatch[1]!.length
-      const contentNodes = renderInline(hMatch[2]!, baseRelPath, onOpenImage)
+      const contentNodes = renderInline(hMatch[2]!, baseRelPath, onOpenImage, onOpenFile)
       if (level === 1) blocks.push(<h1 key={`h-${blockKey++}`}>{contentNodes}</h1>)
       else if (level === 2) blocks.push(<h2 key={`h-${blockKey++}`}>{contentNodes}</h2>)
       else blocks.push(<h3 key={`h-${blockKey++}`}>{contentNodes}</h3>)
@@ -163,10 +330,10 @@ export function MarkdownView({
           {qLines.map((ql, idx) =>
             idx === 0 && ql.trim() ? (
               <div key={idx} style={{ fontWeight: 500, color: 'var(--lw-text)' }}>
-                {renderInline(ql, baseRelPath, onOpenImage)}
+                {renderInline(ql, baseRelPath, onOpenImage, onOpenFile)}
               </div>
             ) : (
-              <div key={idx}>{renderInline(ql, baseRelPath, onOpenImage)}</div>
+              <div key={idx}>{renderInline(ql, baseRelPath, onOpenImage, onOpenFile)}</div>
             ),
           )}
         </blockquote>,
@@ -187,12 +354,12 @@ export function MarkdownView({
                 {checked ? '✓' : '○'}
               </span>
               <span className={checked ? 'lw-item-done' : undefined}>
-                {renderInline(chk[2]!, baseRelPath, onOpenImage)}
+                {renderInline(chk[2]!, baseRelPath, onOpenImage, onOpenFile)}
               </span>
             </li>,
           )
         } else {
-          items.push(<li key={i}>{renderInline(raw, baseRelPath, onOpenImage)}</li>)
+          items.push(<li key={i}>{renderInline(raw, baseRelPath, onOpenImage, onOpenFile)}</li>)
         }
         i += 1
       }
@@ -204,7 +371,7 @@ export function MarkdownView({
       const items: React.ReactNode[] = []
       while (i < lines.length && /^\d+\.\s+/.test(lines[i]!.trim())) {
         const raw = lines[i]!.trim().replace(/^\d+\.\s+/, '')
-        items.push(<li key={i}>{renderInline(raw, baseRelPath, onOpenImage)}</li>)
+        items.push(<li key={i}>{renderInline(raw, baseRelPath, onOpenImage, onOpenFile)}</li>)
         i += 1
       }
       blocks.push(<ol key={`ol-${blockKey++}`}>{items}</ol>)
@@ -215,7 +382,8 @@ export function MarkdownView({
     while (
       i < lines.length &&
       lines[i]!.trim() !== '' &&
-      !/^(#{1,4}\s|[-*]\s|\d+\.\s|>|```|---+$)/.test(lines[i]!.trim())
+      !/^(#{1,4}\s|[-*]\s|\d+\.\s|>|```|---+$)/.test(lines[i]!.trim()) &&
+      !(lines[i]!.includes('|') && i + 1 < lines.length && isTableSeparatorLine(lines[i + 1]!))
     ) {
       paraLines.push(lines[i]!)
       i += 1
@@ -225,7 +393,7 @@ export function MarkdownView({
         {paraLines.map((pl, idx) => (
           <React.Fragment key={idx}>
             {idx > 0 && <br />}
-            {renderInline(pl, baseRelPath, onOpenImage)}
+            {renderInline(pl, baseRelPath, onOpenImage, onOpenFile)}
           </React.Fragment>
         ))}
       </p>,

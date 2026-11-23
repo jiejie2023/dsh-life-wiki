@@ -730,7 +730,7 @@ const CSS = `
 }
 
 .lw-drawer-sm {
-  width: min(440px, 94vw);
+  width: min(490px, 94vw);
 }
 
 .lw-modal {
@@ -1468,12 +1468,134 @@ const CSS = `
   margin: 8px 0;
   display: block;
 }
-.lw-md a {
+.lw-md a,
+.lw-md-link,
+.lw-inline-link {
   color: var(--lw-accent-text);
   text-decoration: none;
   border-bottom: 1px solid var(--lw-accent-soft);
 }
-.lw-md a:hover { border-bottom-color: var(--lw-accent-text); }
+.lw-md-link {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--lw-accent-soft);
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+}
+.lw-md a:hover,
+.lw-md-link:hover,
+.lw-inline-link:hover {
+  border-bottom-color: var(--lw-accent-text);
+}
+
+.lw-inline-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.88em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--lw-subtle);
+  color: inherit;
+}
+
+.lw-md-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+}
+.lw-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+.lw-md th,
+.lw-md td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--lw-border);
+  text-align: left;
+  vertical-align: top;
+}
+.lw-md th {
+  font-weight: 600;
+  color: var(--lw-text-2);
+  background: var(--lw-subtle);
+  border-bottom-color: var(--lw-border-strong);
+  white-space: nowrap;
+}
+.lw-md tr:last-child td {
+  border-bottom: none;
+}
+
+/* Floating non-space-reserving hover actions for narrow drawers (Inbox) */
+.lw-inbox-row {
+  position: relative;
+}
+.lw-inbox-actions {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 14px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, transparent 0%, var(--lw-surface) 18%, var(--lw-surface) 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.14s;
+}
+.lw-inbox-row:hover .lw-inbox-actions,
+.lw-inbox-row:focus-within .lw-inbox-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .lw-inbox-actions {
+    position: static;
+    background: transparent;
+    padding: 0;
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* Click-to-edit wrapped review row */
+.lw-review-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--lw-text);
+  word-break: break-word;
+  cursor: text;
+  padding: 1px 0;
+}
+.lw-review-text.readonly {
+  cursor: default;
+}
+.lw-review-subhead {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--lw-text);
+  padding: 10px 0 2px;
+}
+.lw-review-edit-box {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--lw-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  padding: 1px 0;
+  overflow: hidden;
+}
 
 /* Onboarding */
 .lw-onboard-wrap {

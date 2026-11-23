@@ -261,5 +261,28 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
     assert.match(updated, /2\. ❌ 3 个项目截图尚未收齐/)
     assert.match(updated, /本周投入：1\.5 小时/)
     assert.match(updated, /- 每次改动做视觉验收/)
+
+    const freeform = [
+      '---',
+      'status: draft',
+      '---',
+      '',
+      '## 本周',
+      '',
+      '**阶段主题**',
+      '- 普通进展说明',
+      '1. ✅ 明确完成项',
+      '',
+    ].join('\n')
+    const freeParsed = parseReviewSections(freeform)
+    assert.deepEqual(freeParsed.thisWeekItems, [
+      { done: null, text: '**阶段主题**' },
+      { done: null, text: '普通进展说明' },
+      { done: true, text: '明确完成项' },
+    ])
+    const freeApplied = applyReviewSections(freeform, freeParsed)
+    assert.match(freeApplied, /\*\*阶段主题\*\*/)
+    assert.match(freeApplied, /- 普通进展说明/)
+    assert.match(freeApplied, /1\. ✅ 明确完成项/)
   })
 })

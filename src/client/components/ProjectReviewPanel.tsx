@@ -16,6 +16,68 @@ import {
   IconPlus,
   IconX,
 } from './Icons.tsx'
+import { InlineText } from './MarkdownView.tsx'
+
+export function EditableReviewLine({
+  value,
+  disabled,
+  baseRelPath,
+  className,
+  onOpenFile,
+  onChange,
+  onCommit,
+}: {
+  value: string
+  disabled?: boolean
+  baseRelPath?: string
+  className?: string
+  onOpenFile?: (relPath: string) => void
+  onChange: (next: string) => void
+  onCommit: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const ref = useRef<HTMLTextAreaElement | null>(null)
+
+  useEffect(() => {
+    if (!editing || !ref.current) return
+    ref.current.style.height = 'auto'
+    ref.current.style.height = `${ref.current.scrollHeight}px`
+  }, [editing, value])
+
+  if (!editing || disabled) {
+    return (
+      <div
+        className={`${className ?? 'lw-review-text'} ${disabled ? 'readonly' : ''}`}
+        onClick={() => {
+          if (!disabled) setEditing(true)
+        }}
+      >
+        <InlineText text={value} baseRelPath={baseRelPath} onOpenFile={onOpenFile} />
+      </div>
+    )
+  }
+
+  return (
+    <textarea
+      ref={ref}
+      className="lw-review-edit-box"
+      rows={1}
+      autoFocus
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onKeyDown={(e) => {
+        if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') {
+          e.preventDefault()
+          e.currentTarget.blur()
+        }
+      }}
+      onBlur={() => {
+        setEditing(false)
+        onCommit()
+      }}
+    />
+  )
+}
 
 interface ProjectReviewPanelProps {
   project: ProjectCard
@@ -376,54 +438,79 @@ export function ProjectReviewPanel({
               {draft.totalHoursLine && <span className="lw-muted">{draft.totalHoursLine}</span>}
             </div>
             <div className="lw-list">
-              {draft.thisWeekItems.map((item, idx) => (
-                <div key={`tw-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
-                  <button
-                    type="button"
-                    className={`lw-check ${item.done ? 'checked' : ''}`}
-                    style={{ marginTop: 0 }}
-                    disabled={project.archived}
-                    title={item.done ? '已完成（点击切为未完成）' : '未完成（点击切为已完成）'}
-                    onClick={() => {
-                      const nextItems = draft.thisWeekItems.map((it, i) =>
-                        i === idx ? { ...it, done: !it.done } : it,
-                      )
-                      commitDraft({ ...draft, thisWeekItems: nextItems }, true)
-                    }}
+              {draft.thisWeekItems.map((item, idx) => {
+                const isSubhead =
+                  item.done === null && /^\*\*[^*]+\*\*$/.test(item.text.trim())
+                const isEmptyPlaceholder =
+                  item.done === null && /^[（(].*暂无.*[）)]$/.test(item.text.trim())
+
+                return (
+                  <div
+                    key={`tw-${idx}`}
+                    className="lw-item-row"
+                    style={{ alignItems: 'flex-start' }}
                   >
-                    {item.done && <IconCheck />}
-                  </button>
-                  <input
-                    className="lw-inline-input"
-                    style={{ flex: 1, padding: 0, fontSize: 14 }}
-                    disabled={project.archived}
-                    value={item.text}
-                    onChange={(e) => {
-                      const nextItems = draft.thisWeekItems.map((it, i) =>
-                        i === idx ? { ...it, text: e.target.value } : it,
-                      )
-                      commitDraft({ ...draft, thisWeekItems: nextItems })
-                    }}
-                    onBlur={() => void flushSave()}
-                  />
-                  {!project.archived && (
-                    <div className="lw-hover-actions">
+                    {item.done !== null ? (
                       <button
                         type="button"
-                        className="lw-icon-btn"
-                        style={{ height: 22, minWidth: 22, padding: 0 }}
-                        title="移除"
+                        className={`lw-check ${item.done ? 'checked' : ''}`}
+                        style={{ marginTop: 4 }}
+                        disabled={project.archived}
+                        title={item.done ? '已完成（点击切为未完成）' : '未完成（点击切为已完成）'}
                         onClick={() => {
-                          const nextItems = draft.thisWeekItems.filter((_, i) => i !== idx)
+                          const nextItems = draft.thisWeekItems.map((it, i) =>
+                            i === idx ? { ...it, done: !it.done } : it,
+                          )
                           commitDraft({ ...draft, thisWeekItems: nextItems }, true)
                         }}
                       >
-                        <IconX size={12} />
+                        {item.done && <IconCheck />}
                       </button>
-                    </div>
-                  )}
-                </div>
-              ))}
+                    ) : !isSubhead && !isEmptyPlaceholder ? (
+                      <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
+                        <span className="lw-bullet-dot" />
+                      </span>
+                    ) : null}
+
+                    <EditableReviewLine
+                      value={item.text}
+                      disabled={project.archived}
+                      baseRelPath={selectedSummary?.relPath}
+                      className={
+                        isSubhead
+                          ? 'lw-review-text lw-review-subhead'
+                          : isEmptyPlaceholder
+                            ? 'lw-review-text lw-muted'
+                            : 'lw-review-text'
+                      }
+                      onOpenFile={(rel) => onOpenFile(rel)}
+                      onChange={(val) => {
+                        const nextItems = draft.thisWeekItems.map((it, i) =>
+                          i === idx ? { ...it, text: val } : it,
+                        )
+                        commitDraft({ ...draft, thisWeekItems: nextItems })
+                      }}
+                      onCommit={() => void flushSave()}
+                    />
+                    {!project.archived && (
+                      <div className="lw-hover-actions" style={{ marginTop: 1 }}>
+                        <button
+                          type="button"
+                          className="lw-icon-btn"
+                          style={{ height: 22, minWidth: 22, padding: 0 }}
+                          title="移除"
+                          onClick={() => {
+                            const nextItems = draft.thisWeekItems.filter((_, i) => i !== idx)
+                            commitDraft({ ...draft, thisWeekItems: nextItems }, true)
+                          }}
+                        >
+                          <IconX size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
 
               {!project.archived && (
                 <form
@@ -465,23 +552,23 @@ export function ProjectReviewPanel({
             </span>
             <div className="lw-list">
               {draft.reasons.map((text, idx) => (
-                <div key={`rs-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
-                  <span className="lw-bullet-slot">
+                <div key={`rs-${idx}`} className="lw-item-row" style={{ alignItems: 'flex-start' }}>
+                  <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
                     <span className="lw-bullet-dot" />
                   </span>
-                  <input
-                    className="lw-inline-input"
-                    style={{ flex: 1, padding: 0, fontSize: 14 }}
-                    disabled={project.archived}
+                  <EditableReviewLine
                     value={text}
-                    onChange={(e) => {
-                      const next = draft.reasons.map((s, i) => (i === idx ? e.target.value : s))
+                    disabled={project.archived}
+                    baseRelPath={selectedSummary?.relPath}
+                    onOpenFile={(rel) => onOpenFile(rel)}
+                    onChange={(val) => {
+                      const next = draft.reasons.map((s, i) => (i === idx ? val : s))
                       commitDraft({ ...draft, reasons: next })
                     }}
-                    onBlur={() => void flushSave()}
+                    onCommit={() => void flushSave()}
                   />
                   {!project.archived && (
-                    <div className="lw-hover-actions">
+                    <div className="lw-hover-actions" style={{ marginTop: 1 }}>
                       <button
                         type="button"
                         className="lw-icon-btn"
@@ -532,23 +619,23 @@ export function ProjectReviewPanel({
             </span>
             <div className="lw-list">
               {draft.lessons.map((text, idx) => (
-                <div key={`ls-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
-                  <span className="lw-bullet-slot">
+                <div key={`ls-${idx}`} className="lw-item-row" style={{ alignItems: 'flex-start' }}>
+                  <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
                     <span className="lw-bullet-dot reflection" />
                   </span>
-                  <input
-                    className="lw-inline-input"
-                    style={{ flex: 1, padding: 0, fontSize: 14 }}
-                    disabled={project.archived}
+                  <EditableReviewLine
                     value={text}
-                    onChange={(e) => {
-                      const next = draft.lessons.map((s, i) => (i === idx ? e.target.value : s))
+                    disabled={project.archived}
+                    baseRelPath={selectedSummary?.relPath}
+                    onOpenFile={(rel) => onOpenFile(rel)}
+                    onChange={(val) => {
+                      const next = draft.lessons.map((s, i) => (i === idx ? val : s))
                       commitDraft({ ...draft, lessons: next })
                     }}
-                    onBlur={() => void flushSave()}
+                    onCommit={() => void flushSave()}
                   />
                   {!project.archived && (
-                    <div className="lw-hover-actions">
+                    <div className="lw-hover-actions" style={{ marginTop: 1 }}>
                       <button
                         type="button"
                         className="lw-icon-btn"
@@ -599,28 +686,26 @@ export function ProjectReviewPanel({
             </span>
             <div className="lw-list">
               {draft.nextWeekItems.map((text, idx) => (
-                <div key={`nw-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
+                <div key={`nw-${idx}`} className="lw-item-row" style={{ alignItems: 'flex-start' }}>
                   <span
                     className="lw-bullet-slot lw-mono"
-                    style={{ fontSize: 12, color: 'var(--lw-muted)' }}
+                    style={{ fontSize: 12, color: 'var(--lw-muted)', marginTop: 3 }}
                   >
                     {idx + 1}.
                   </span>
-                  <input
-                    className="lw-inline-input"
-                    style={{ flex: 1, padding: 0, fontSize: 14 }}
-                    disabled={project.archived}
+                  <EditableReviewLine
                     value={text}
-                    onChange={(e) => {
-                      const next = draft.nextWeekItems.map((s, i) =>
-                        i === idx ? e.target.value : s,
-                      )
+                    disabled={project.archived}
+                    baseRelPath={selectedSummary?.relPath}
+                    onOpenFile={(rel) => onOpenFile(rel)}
+                    onChange={(val) => {
+                      const next = draft.nextWeekItems.map((s, i) => (i === idx ? val : s))
                       commitDraft({ ...draft, nextWeekItems: next })
                     }}
-                    onBlur={() => void flushSave()}
+                    onCommit={() => void flushSave()}
                   />
                   {!project.archived && (
-                    <div className="lw-hover-actions">
+                    <div className="lw-hover-actions" style={{ marginTop: 1 }}>
                       <button
                         type="button"
                         className="lw-icon-btn"

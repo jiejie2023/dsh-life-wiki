@@ -71,13 +71,16 @@ export function TodayView({
   }, [selectedDate])
 
   useEffect(() => {
-    if (!addMenuOpen) return
+    if (!addMenuOpen && !warningsModalOpen) return
     const onPointerDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null
-      if (!target?.closest('[data-add-project-menu]')) setAddMenuOpen(false)
+      if (addMenuOpen && !target?.closest('[data-add-project-menu]')) setAddMenuOpen(false)
     }
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setAddMenuOpen(false)
+      if (e.key === 'Escape') {
+        if (warningsModalOpen) setWarningsModalOpen(false)
+        else setAddMenuOpen(false)
+      }
     }
     document.addEventListener('mousedown', onPointerDown)
     window.addEventListener('keydown', onKeyDown)
@@ -85,7 +88,12 @@ export function TodayView({
       document.removeEventListener('mousedown', onPointerDown)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [addMenuOpen])
+  }, [addMenuOpen, warningsModalOpen])
+
+  const hasTodayWarning = useMemo(
+    () => formatWarnings.some((w) => w.date === selectedDate),
+    [formatWarnings, selectedDate],
+  )
 
   const { activeGroups, idleGroups } = useMemo(() => {
     const active: ProjectTaskGroup[] = []
@@ -351,7 +359,11 @@ export function TodayView({
             <button
               type="button"
               className="lw-btn lw-btn-sm lw-btn-ghost"
-              style={{ color: 'var(--lw-warn)', padding: '0 6px' }}
+              style={{
+                color: hasTodayWarning ? 'var(--lw-warn)' : 'var(--lw-text-3)',
+                padding: '0 6px',
+              }}
+              title="查看格式不规范的历史任务文件"
               onClick={() => setWarningsModalOpen(true)}
             >
               {formatWarnings.length} 项格式提醒

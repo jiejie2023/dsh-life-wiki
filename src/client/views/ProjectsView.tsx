@@ -22,7 +22,7 @@ import {
   IconX,
 } from '../components/Icons.tsx'
 import { IdeaDetailView } from '../components/IdeaDetailView.tsx'
-import { MarkdownView } from '../components/MarkdownView.tsx'
+import { InlineText, MarkdownView } from '../components/MarkdownView.tsx'
 import { ProjectReviewPanel } from '../components/ProjectReviewPanel.tsx'
 import { ProjectTaskPanel, priorityLabel } from '../components/ProjectTaskPanel.tsx'
 
@@ -31,6 +31,7 @@ type DetailTab = 'plan' | 'tasks' | 'resources' | 'reviews' | 'outputs'
 
 interface ProjectsViewProps {
   snapshot: BoardSnapshot
+  resetSignal?: number
   onOpenFile: (relPath: string, opts?: { edit?: boolean }) => void
   onRunAction: RunActionFn
 }
@@ -93,6 +94,7 @@ function stripLeadingNumber(text: string): string {
 
 export function ProjectsView({
   snapshot,
+  resetSignal = 0,
   onOpenFile,
   onRunAction,
 }: ProjectsViewProps) {
@@ -102,6 +104,14 @@ export function ProjectsView({
   // Full-page Project & Idea Detail state
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null)
   const [selectedIdeaName, setSelectedIdeaName] = useState<string | null>(null)
+  const lastResetRef = useRef(resetSignal)
+  useEffect(() => {
+    if (resetSignal !== lastResetRef.current) {
+      lastResetRef.current = resetSignal
+      setSelectedProjectName(null)
+      setSelectedIdeaName(null)
+    }
+  }, [resetSignal])
   const [selectedArchived, setSelectedArchived] = useState(false)
   const [detailTab, setDetailTab] = useState<DetailTab>('plan')
   const [newPlanText, setNewPlanText] = useState('')
@@ -296,6 +306,8 @@ export function ProjectsView({
         setTaskDateMenuOpen(false)
       } else if (selectedProjectName) {
         setSelectedProjectName(null)
+      } else if (selectedIdeaName) {
+        setSelectedIdeaName(null)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -309,6 +321,7 @@ export function ProjectsView({
     editingDateField,
     taskDateMenuOpen,
     selectedProjectName,
+    selectedIdeaName,
   ])
 
   const openProjectDetail = (p: ProjectCard) => {
@@ -1154,37 +1167,59 @@ export function ProjectsView({
             </div>
           </div>
 
-          {/* Inline Editable Goal */}
+          {/* Inline Editable Goal (clean inline Markdown in read mode, textarea on click) */}
           {!activeDetail.archived ? (
-            <textarea
-              ref={goalRef}
-              className="lw-goal-edit"
-              rows={1}
-              value={goalDraft ?? activeDetail.goal}
-              onChange={(e) => setGoalDraft(e.target.value)}
-              onBlur={() => {
-                if (goalDraft !== null && goalDraft.trim() !== activeDetail.goal.trim()) {
-                  const nextGoal = goalDraft.trim()
-                  setGoalDraft(null)
-                  void onRunAction(
-                    () => api.updateProjectMeta(activeDetail.name, { goal: nextGoal }),
-                    {
-                      optimistic: (prev) => ({
-                        ...prev,
-                        projects: prev.projects.map((p) =>
-                          p.name === activeDetail.name ? { ...p, goal: nextGoal } : p,
-                        ),
-                      }),
-                    },
-                  )
-                } else {
-                  setGoalDraft(null)
-                }
-              }}
-              placeholder="写一句可检验的项目目标…"
-            />
+            goalDraft !== null || !activeDetail.goal ? (
+              <textarea
+                ref={goalRef}
+                className="lw-goal-edit"
+                rows={1}
+                autoFocus={goalDraft !== null}
+                value={goalDraft ?? ''}
+                onChange={(e) => setGoalDraft(e.target.value)}
+                onBlur={() => {
+                  if (goalDraft !== null && goalDraft.trim() !== activeDetail.goal.trim()) {
+                    const nextGoal = goalDraft.trim()
+                    setGoalDraft(null)
+                    void onRunAction(
+                      () => api.updateProjectMeta(activeDetail.name, { goal: nextGoal }),
+                      {
+                        optimistic: (prev) => ({
+                          ...prev,
+                          projects: prev.projects.map((p) =>
+                            p.name === activeDetail.name ? { ...p, goal: nextGoal } : p,
+                          ),
+                        }),
+                      },
+                    )
+                  } else {
+                    setGoalDraft(null)
+                  }
+                }}
+                placeholder="写一句可检验的项目目标…"
+              />
+            ) : (
+              <div
+                className="lw-goal-edit"
+                style={{ cursor: 'text' }}
+                title="点击编辑目标"
+                onClick={() => setGoalDraft(activeDetail.goal)}
+              >
+                <InlineText
+                  text={activeDetail.goal}
+                  baseRelPath={activeDetail.homepageRelPath}
+                  onOpenFile={(rel) => onOpenFile(rel)}
+                />
+              </div>
+            )
           ) : activeDetail.goal ? (
-            <div style={{ fontSize: 14, color: 'var(--lw-text-2)' }}>{activeDetail.goal}</div>
+            <div style={{ fontSize: 14, color: 'var(--lw-text-2)' }}>
+              <InlineText
+                text={activeDetail.goal}
+                baseRelPath={activeDetail.homepageRelPath}
+                onOpenFile={(rel) => onOpenFile(rel)}
+              />
+            </div>
           ) : null}
         </div>
 
@@ -1266,7 +1301,11 @@ export function ProjectsView({
                   {item.checked && <IconCheck />}
                 </button>
                 <span className={`lw-item-title ${item.checked ? 'lw-item-done' : ''}`}>
-                  {stripLeadingNumber(item.text)}
+                  <InlineText
+                    text={stripLeadingNumber(item.text)}
+                    baseRelPath={activeDetail.homepageRelPath}
+                    onOpenFile={(rel) => onOpenFile(rel)}
+                  />
                 </span>
                 {!activeDetail.archived && !item.checked && (
                   <div className="lw-hover-actions">
@@ -1562,7 +1601,11 @@ export function ProjectsView({
           inlineDocLoading ? (
             <div className="lw-muted">读取中…</div>
           ) : inlineDoc && inlineDoc.content.trim() ? (
-            <MarkdownView content={inlineDoc.content} baseRelPath={inlineDoc.path} />
+            <MarkdownView
+              content={inlineDoc.content}
+              baseRelPath={inlineDoc.path}
+              onOpenFile={(rel) => onOpenFile(rel)}
+            />
           ) : (
             <div className="lw-empty">暂无记录，点右上角「编辑原文」添加。</div>
           )
@@ -1768,7 +1811,10 @@ export function ProjectsView({
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {p.nextStep ? stripLeadingNumber(p.nextStep) : p.goal}
+                      <InlineText
+                        text={p.nextStep ? stripLeadingNumber(p.nextStep) : p.goal}
+                        baseRelPath={p.homepageRelPath}
+                      />
                     </div>
                   )}
                 </div>

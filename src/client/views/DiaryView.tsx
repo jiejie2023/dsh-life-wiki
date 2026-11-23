@@ -134,15 +134,18 @@ export function DiaryView({
     el.style.height = `${Math.max(54, el.scrollHeight)}px`
   }, [draft])
 
-  // Close month dropdown on outside click / Esc
+  // Close month dropdown or lightbox on outside click / Esc
   useEffect(() => {
-    if (!monthMenuOpen) return
+    if (!monthMenuOpen && !lightboxSrc) return
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null
-      if (!t?.closest('[data-diary-month-menu]')) setMonthMenuOpen(false)
+      if (monthMenuOpen && !t?.closest('[data-diary-month-menu]')) setMonthMenuOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setMonthMenuOpen(false)
+      if (e.key === 'Escape') {
+        if (lightboxSrc) setLightboxSrc(null)
+        else setMonthMenuOpen(false)
+      }
     }
     document.addEventListener('mousedown', onDown)
     window.addEventListener('keydown', onKey)
@@ -150,7 +153,7 @@ export function DiaryView({
       document.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [monthMenuOpen])
+  }, [monthMenuOpen, lightboxSrc])
 
   // Months sorted descending (newest first) and ascending (for < / > stepping)
   const monthsDesc = useMemo(() => {
@@ -539,6 +542,7 @@ export function DiaryView({
                               baseRelPath={entry.relPath}
                               hideFrontmatter
                               onOpenImage={(src) => setLightboxSrc(src)}
+                              onOpenFile={(rel) => onOpenFile(rel)}
                             />
                           </div>
                         ))

@@ -12,7 +12,9 @@ import {
   IconProjectPie,
   IconX,
 } from '../components/Icons.tsx'
-import { parseReviewWeekLine } from '../reviewMarkdown.ts'
+import { InlineText } from '../components/MarkdownView.tsx'
+import { EditableReviewLine } from '../components/ProjectReviewPanel.tsx'
+import { parseReviewWeekLine, type ReviewWeekItem } from '../reviewMarkdown.ts'
 
 interface ReviewViewProps {
   snapshot: BoardSnapshot
@@ -221,7 +223,7 @@ export function ReviewView({
               const summaryItems = rev
                 ? rev.summaryLines
                     .map((l) => parseReviewWeekLine(l))
-                    .filter((x): x is { done: boolean; text: string } => x !== null)
+                    .filter((x): x is ReviewWeekItem => x !== null)
                 : []
 
               return (
@@ -306,21 +308,41 @@ export function ReviewView({
                     <div className="lw-stack" style={{ gap: 12 }}>
                       {summaryItems.length > 0 && (
                         <div className="lw-list">
-                          {summaryItems.slice(0, 6).map((item, idx) => (
-                            <div
-                              key={idx}
-                              className="lw-item-row"
-                              style={{ alignItems: 'center', paddingTop: 5, paddingBottom: 5 }}
-                            >
-                              <span
-                                className={`lw-check ${item.done ? 'checked' : ''}`}
-                                style={{ marginTop: 0, cursor: 'default' }}
+                          {summaryItems.slice(0, 6).map((item, idx) => {
+                            const isEmptyPlaceholder =
+                              item.done === null && /^[（(].*暂无.*[）)]$/.test(item.text.trim())
+                            const isSubhead =
+                              item.done === null && /^\*\*[^*]+\*\*$/.test(item.text.trim())
+                            return (
+                              <div
+                                key={idx}
+                                className="lw-item-row"
+                                style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
                               >
-                                {item.done && <IconCheck />}
-                              </span>
-                              <span className="lw-item-title">{item.text}</span>
-                            </div>
-                          ))}
+                                {item.done !== null ? (
+                                  <span
+                                    className={`lw-check ${item.done ? 'checked' : ''}`}
+                                    style={{ marginTop: 3, cursor: 'default' }}
+                                  >
+                                    {item.done && <IconCheck />}
+                                  </span>
+                                ) : !isSubhead && !isEmptyPlaceholder ? (
+                                  <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
+                                    <span className="lw-bullet-dot" />
+                                  </span>
+                                ) : null}
+                                <span
+                                  className={`lw-item-title ${isEmptyPlaceholder ? 'lw-muted' : ''}`}
+                                >
+                                  <InlineText
+                                    text={item.text}
+                                    baseRelPath={rev.relPath}
+                                    onOpenFile={(rel) => onOpenFile(rel)}
+                                  />
+                                </span>
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
 
@@ -334,27 +356,25 @@ export function ReviewView({
                             <div
                               key={`nw-${idx}`}
                               className="lw-item-row"
-                              style={{ alignItems: 'center', paddingTop: 5, paddingBottom: 5 }}
+                              style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
                             >
                               <span
                                 className="lw-bullet-slot lw-mono"
-                                style={{ fontSize: 12, color: 'var(--lw-muted)' }}
+                                style={{ fontSize: 12, color: 'var(--lw-muted)', marginTop: 3 }}
                               >
                                 {idx + 1}.
                               </span>
-                              <input
-                                className="lw-inline-input"
-                                style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+                              <EditableReviewLine
                                 value={text}
-                                onChange={(e) => {
-                                  const next = nextItems.map((s, i) =>
-                                    i === idx ? e.target.value : s,
-                                  )
+                                baseRelPath={rev.relPath}
+                                onOpenFile={(rel) => onOpenFile(rel)}
+                                onChange={(val) => {
+                                  const next = nextItems.map((s, i) => (i === idx ? val : s))
                                   setNextWeekDrafts((prev) => ({ ...prev, [rev.relPath]: next }))
                                 }}
-                                onBlur={() => saveNextItems(rev, nextItems)}
+                                onCommit={() => saveNextItems(rev, nextItems)}
                               />
-                              <div className="lw-hover-actions">
+                              <div className="lw-hover-actions" style={{ marginTop: 1 }}>
                                 <button
                                   type="button"
                                   className="lw-icon-btn"

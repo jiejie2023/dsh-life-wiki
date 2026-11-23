@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import type { BoardSnapshot } from '../../shared/types.ts'
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
@@ -23,6 +23,15 @@ export function KnowledgeView({
   const [wikiTitle, setWikiTitle] = useState('')
   const [wikiSources, setWikiSources] = useState('')
   const [wikiBody, setWikiBody] = useState('')
+
+  useEffect(() => {
+    if (!showNewWiki) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowNewWiki(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [showNewWiki])
 
   const { wikiPages, rawEntries } = snapshot.knowledge
 
@@ -214,7 +223,21 @@ export function KnowledgeView({
                   </div>
 
                   <div className="lw-row" style={{ gap: 10, flexShrink: 0 }}>
-                    {entry.fetched && <span className="lw-muted">{entry.fetched}</span>}
+                    {entry.fetched && (
+                      <span
+                        className="lw-muted lw-mono"
+                        title={entry.fetched}
+                        style={{
+                          maxWidth: 104,
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          textAlign: 'right',
+                        }}
+                      >
+                        {entry.fetched.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? entry.fetched}
+                      </span>
+                    )}
                     {entry.sourceUrl && (
                       <a
                         href={entry.sourceUrl}
