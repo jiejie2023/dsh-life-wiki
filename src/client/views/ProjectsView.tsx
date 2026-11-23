@@ -1789,40 +1789,19 @@ export function ProjectsView({
                   )}
                 </div>
 
-                <div className="lw-row" style={{ gap: 12, flexShrink: 0 }}>
-                  {!p.archived && (
-                    <div className="lw-hover-actions" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        className="lw-btn lw-btn-sm lw-btn-ghost"
-                        onClick={() =>
-                          void onRunAction(async () => {
-                            await api.createTaskFile(p.name)
-                            onJumpToToday()
-                          })
-                        }
+                {((areaFilter === 'ALL' && p.area) || p.deadline) && (
+                  <div className="lw-row" style={{ gap: 12, flexShrink: 0 }}>
+                    {areaFilter === 'ALL' && p.area && <span className="lw-muted">{p.area}</span>}
+                    {p.deadline && (
+                      <span
+                        className="lw-muted"
+                        style={isOverdue ? { color: 'var(--lw-danger)', fontWeight: 500 } : undefined}
                       >
-                        今日开做
-                      </button>
-                    </div>
-                  )}
-                  {p.area && <span className="lw-muted">{p.area}</span>}
-                  {p.deadline ? (
-                    <span
-                      className="lw-muted"
-                      style={isOverdue ? { color: 'var(--lw-danger)', fontWeight: 500 } : undefined}
-                    >
-                      {formatShortDate(p.deadline)}
-                    </span>
-                  ) : !p.created && p.timeframe ? (
-                    <span className="lw-muted">{p.timeframe}</span>
-                  ) : null}
-                  {totalPlan > 0 && (
-                    <span className="lw-muted" style={{ minWidth: 26, textAlign: 'right' }}>
-                      {donePlan}/{totalPlan}
-                    </span>
-                  )}
-                </div>
+                        {formatShortDate(p.deadline)}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )
           })}
