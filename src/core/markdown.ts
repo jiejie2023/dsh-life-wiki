@@ -315,10 +315,10 @@ export function toggleCheckboxLine(line: string, minutes?: number): string {
     if (/[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]/i.test(body)) {
       body = body.replace(
         /[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]/i,
-        `（${rounded} 分钟）`,
+        `（${rounded} min）`,
       )
     } else {
-      body = `${body.trimEnd()}（${rounded} 分钟）`
+      body = `${body.trimEnd()}（${rounded} min）`
     }
   }
   return `${match[1]}${nextChecked ? 'x' : ' '}${match[3]}${body}`
@@ -331,7 +331,7 @@ export function setCheckboxMinutes(line: string, minutes: number | null): string
     .replace(/\s*[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]\s*$/i, '')
     .trimEnd()
   if (typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0) {
-    return `${match[1]}${cleaned}（${Math.round(minutes)} 分钟）`
+    return `${match[1]}${cleaned}（${Math.round(minutes)} min）`
   }
   return `${match[1]}${cleaned}`
 }

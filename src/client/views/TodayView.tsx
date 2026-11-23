@@ -49,9 +49,9 @@ function formatReadableDate(isoDate: string): string {
 }
 
 function formatDurationSummary(minutes: number): string {
-  if (minutes < 60) return `今日投入 ${minutes} 分钟`
+  if (minutes < 60) return `今日投入 ${minutes} min`
   const h = (minutes / 60).toFixed(1).replace(/\.0$/, '')
-  return `今日投入 ${h} 小时`
+  return `今日投入 ${h} h`
 }
 
 function cleanDisplayBullet(line: string): string {
@@ -137,7 +137,7 @@ export function TodayView({
   const durationTooltip = useMemo(() => {
     const parts = groups
       .filter((g) => g.totalMinutes > 0)
-      .map((g) => `${g.projectName} ${g.totalMinutes} 分钟`)
+      .map((g) => `${g.projectName} ${g.totalMinutes} min`)
     return parts.length > 0 ? `今日各项目投入：${parts.join('，')}` : '今日任务累计投入时长'
   }, [groups])
 
@@ -441,7 +441,7 @@ export function TodayView({
                     <h2 className="lw-section-title">{group.projectName}</h2>
                     {group.area && <span className="lw-muted">{group.area}</span>}
                     {group.totalMinutes > 0 && (
-                      <span className="lw-muted">{group.totalMinutes} 分钟</span>
+                      <span className="lw-muted">{group.totalMinutes} min</span>
                     )}
                   </div>
 
@@ -560,7 +560,7 @@ export function TodayView({
                                   className="lw-pop-chip"
                                   onClick={() => applyDuration(m)}
                                 >
-                                  {m}m
+                                  {m} min
                                 </button>
                               ))}
                               <input
@@ -571,7 +571,7 @@ export function TodayView({
                                   padding: '2px 4px',
                                   textAlign: 'center',
                                 }}
-                                placeholder="分钟"
+                                placeholder="min"
                                 value={customMinutes}
                                 onChange={(e) => setCustomMinutes(e.target.value)}
                                 autoFocus
@@ -597,7 +597,7 @@ export function TodayView({
                                 setDurationOpenKey(rowKey)
                               }}
                             >
-                              {task.minutes}m
+                              {task.minutes} min
                             </button>
                           ) : (
                             <div className="lw-hover-actions">
