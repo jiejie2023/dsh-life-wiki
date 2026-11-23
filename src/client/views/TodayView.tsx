@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import type {
   BoardSnapshot,
   ProjectTaskGroup,
@@ -8,16 +8,13 @@ import type {
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
 import {
-  IconCheck,
-  IconChevronDown,
   IconChevronLeft,
   IconChevronRight,
-  IconClock,
-  IconFile,
   IconPlus,
   IconStar,
   IconX,
 } from '../components/Icons.tsx'
+import { ProjectTaskPanel, priorityLabel } from '../components/ProjectTaskPanel.tsx'
 
 interface TodayViewProps {
   snapshot: BoardSnapshot
@@ -29,32 +26,6 @@ interface TodayViewProps {
 }
 
 const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
-
-const TASK_STATUS_OPTIONS: Array<{ value: TaskFileStatus; label: string }> = [
-  { value: 'todo', label: '未开始' },
-  { value: 'doing', label: '进行中' },
-  { value: 'done', label: '已完成' },
-]
-
-const PRIORITY_OPTIONS: Array<{ value: TaskPriority; label: string }> = [
-  { value: 'high', label: '高' },
-  { value: 'medium', label: '中' },
-  { value: 'low', label: '低' },
-]
-
-const PRIORITY_ORDER: Record<TaskPriority, number> = {
-  high: 0,
-  medium: 1,
-  low: 2,
-}
-
-function normalizePriority(p: unknown): TaskPriority {
-  return p === 'high' || p === 'low' ? p : 'medium'
-}
-
-function priorityLabel(p: TaskPriority): string {
-  return p === 'high' ? '高' : p === 'low' ? '低' : '中'
-}
 
 function shiftDate(isoDate: string, deltaDays: number): string {
   const [y, m, d] = isoDate.split('-').map(Number)
@@ -74,20 +45,6 @@ function formatReadableDate(isoDate: string): string {
   return `${m}月${d}日 · ${WEEKDAYS[dt.getDay()]}`
 }
 
-function cleanDisplayBullet(line: string): string {
-  return line.replace(/^\s*[-*•·]+\s+/, '').trim()
-}
-
-function cleanTaskDisplayText(text: string, hasMinutes: boolean): string {
-  let out = text.replace(/^\s*(?:\[\s*(高|中|低|P1|P2|P3)\s*\]|【\s*(高|中|低)\s*】)\s*/i, '')
-  if (hasMinutes) {
-    out = out
-      .replace(/\s*[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]\s*$/i, '')
-      .trimEnd()
-  }
-  return out
-}
-
 export function TodayView({
   snapshot,
   selectedDate,
@@ -97,56 +54,12 @@ export function TodayView({
   onRunAction,
 }: TodayViewProps) {
   const [diaryText, setDiaryText] = useState('')
-  const [newTaskInputs, setNewTaskInputs] = useState<Record<string, string>>({})
-  const [newTaskPriority, setNewTaskPriority] = useState<Record<string, TaskPriority>>({})
-  const [newPrioOpenProject, setNewPrioOpenProject] = useState<string | null>(null)
-  const [prioOpenKey, setPrioOpenKey] = useState<string | null>(null)
-  const [durationOpenKey, setDurationOpenKey] = useState<string | null>(null)
-  const [customMinutes, setCustomMinutes] = useState('')
-  const [statusMenuProject, setStatusMenuProject] = useState<string | null>(null)
-  const [projectMode, setProjectMode] = useState<Record<string, 'task' | 'log' | 'reflection'>>({})
-  const [logInputs, setLogInputs] = useState<Record<string, string>>({})
-  const [reflectionInputs, setReflectionInputs] = useState<Record<string, string>>({})
   const [revealedProjects, setRevealedProjects] = useState<Record<string, boolean>>({})
   const [warningsModalOpen, setWarningsModalOpen] = useState(false)
   const dateInputRef = useRef<HTMLInputElement>(null)
 
   const { diary, groups, formatWarnings } = snapshot.today
   const isToday = selectedDate === todayLocalIso()
-
-  // Close floating menus on outside click or Esc
-  useEffect(() => {
-    if (!statusMenuProject && !durationOpenKey && !prioOpenKey && !newPrioOpenProject) return
-    const onPointerDown = (e: MouseEvent) => {
-      const target = e.target as HTMLElement | null
-      if (statusMenuProject && !target?.closest('[data-status-menu]')) {
-        setStatusMenuProject(null)
-      }
-      if (durationOpenKey && !target?.closest('[data-duration-menu]')) {
-        setDurationOpenKey(null)
-      }
-      if (prioOpenKey && !target?.closest('[data-prio-menu]')) {
-        setPrioOpenKey(null)
-      }
-      if (newPrioOpenProject && !target?.closest('[data-new-prio-menu]')) {
-        setNewPrioOpenProject(null)
-      }
-    }
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setStatusMenuProject(null)
-        setDurationOpenKey(null)
-        setPrioOpenKey(null)
-        setNewPrioOpenProject(null)
-      }
-    }
-    document.addEventListener('mousedown', onPointerDown)
-    window.addEventListener('keydown', onKeyDown)
-    return () => {
-      document.removeEventListener('mousedown', onPointerDown)
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [statusMenuProject, durationOpenKey, prioOpenKey, newPrioOpenProject])
 
   const { activeGroups, idleGroups } = useMemo(() => {
     const active: ProjectTaskGroup[] = []
@@ -182,14 +95,8 @@ export function TodayView({
     })
   }
 
-  const handleToggleTask = async (
-    group: ProjectTaskGroup,
-    lineIndex: number,
-    minutes?: number,
-  ) => {
-    setDurationOpenKey(null)
-    setCustomMinutes('')
-    await onRunAction(() => api.toggleTask(group.fileRelPath, lineIndex, minutes), {
+  const handleToggleTask = (group: ProjectTaskGroup, lineIndex: number, minutes?: number) => {
+    void onRunAction(() => api.toggleTask(group.fileRelPath, lineIndex, minutes), {
       optimistic: (prev) => ({
         ...prev,
         today: {
@@ -216,14 +123,12 @@ export function TodayView({
     })
   }
 
-  const handleSetMinutes = async (
+  const handleSetMinutes = (
     group: ProjectTaskGroup,
     lineIndex: number,
     minutes: number | null,
   ) => {
-    setDurationOpenKey(null)
-    setCustomMinutes('')
-    await onRunAction(() => api.setTaskMinutes(group.fileRelPath, lineIndex, minutes), {
+    void onRunAction(() => api.setTaskMinutes(group.fileRelPath, lineIndex, minutes), {
       optimistic: (prev) => ({
         ...prev,
         today: {
@@ -244,13 +149,12 @@ export function TodayView({
     })
   }
 
-  const handleSetPriority = async (
+  const handleSetPriority = (
     group: ProjectTaskGroup,
     lineIndex: number,
     priority: TaskPriority,
   ) => {
-    setPrioOpenKey(null)
-    await onRunAction(() => api.setTaskPriority(group.fileRelPath, lineIndex, priority), {
+    void onRunAction(() => api.setTaskPriority(group.fileRelPath, lineIndex, priority), {
       optimistic: (prev) => ({
         ...prev,
         today: {
@@ -270,12 +174,8 @@ export function TodayView({
     })
   }
 
-  const handleAddTask = async (projectName: string) => {
-    const text = (newTaskInputs[projectName] ?? '').trim()
-    if (!text) return
-    const priority = newTaskPriority[projectName] ?? 'medium'
-    setNewTaskInputs((prev) => ({ ...prev, [projectName]: '' }))
-    await onRunAction(() => api.addTask(projectName, text, selectedDate, priority), {
+  const handleAddTask = (projectName: string, text: string, priority: TaskPriority) => {
+    void onRunAction(() => api.addTask(projectName, text, selectedDate, priority), {
       optimistic: (prev) => ({
         ...prev,
         today: {
@@ -306,10 +206,9 @@ export function TodayView({
     })
   }
 
-  const handleSelectStatus = async (group: ProjectTaskGroup, next: TaskFileStatus) => {
-    setStatusMenuProject(null)
+  const handleSelectStatus = (group: ProjectTaskGroup, next: TaskFileStatus) => {
     if (group.status === next) return
-    await onRunAction(() => api.updateTaskStatus(group.fileRelPath, next), {
+    void onRunAction(() => api.updateTaskStatus(group.fileRelPath, next), {
       optimistic: (prev) => ({
         ...prev,
         today: {
@@ -322,17 +221,12 @@ export function TodayView({
     })
   }
 
-  const handleAppendNote = async (group: ProjectTaskGroup, section: 'log' | 'reflection') => {
-    const raw =
-      section === 'log' ? logInputs[group.projectName] : reflectionInputs[group.projectName]
-    const text = (raw ?? '').trim()
-    if (!text) return
-    if (section === 'log') {
-      setLogInputs((prev) => ({ ...prev, [group.projectName]: '' }))
-    } else {
-      setReflectionInputs((prev) => ({ ...prev, [group.projectName]: '' }))
-    }
-    await onRunAction(
+  const handleAppendNote = (
+    group: ProjectTaskGroup,
+    section: 'log' | 'reflection',
+    text: string,
+  ) => {
+    void onRunAction(
       async () => {
         const rel = group.exists
           ? group.fileRelPath
@@ -480,393 +374,20 @@ export function TodayView({
         <div className="lw-empty">还没有进行中的项目，去「项目」页新建一个吧。</div>
       ) : (
         <div className="lw-stack" style={{ gap: 28 }}>
-          {activeGroups.map((group) => {
-            const mode = projectMode[group.projectName] ?? 'task'
-            const curStatus: TaskFileStatus = group.status ?? 'doing'
-            const curStatusLabel =
-              TASK_STATUS_OPTIONS.find((o) => o.value === curStatus)?.label ?? '进行中'
-            const menuOpen = statusMenuProject === group.projectName
-
-            // Sort strictly by priority (高 -> 中 -> 低), tie-break by original order
-            const sortedTasks = [...group.tasks].sort(
-              (a, b) =>
-                PRIORITY_ORDER[normalizePriority(a.priority)] -
-                  PRIORITY_ORDER[normalizePriority(b.priority)] ||
-                a.lineIndex - b.lineIndex,
-            )
-
-            const draftPrio = newTaskPriority[group.projectName] ?? 'medium'
-
-            return (
-              <section key={group.projectName} className="lw-stack" style={{ gap: 6 }}>
-                {/* Section Header */}
-                <div className="lw-section-head">
-                  <h2 className="lw-section-title">{group.projectName}</h2>
-
-                  <div className="lw-row" style={{ gap: 2 }}>
-                    <div className="lw-mode-tabs" role="tablist">
-                      {(
-                        [
-                          ['task', '任务'],
-                          ['log', '日志'],
-                          ['reflection', '反思'],
-                        ] as const
-                      ).map(([key, label]) => (
-                        <button
-                          key={key}
-                          type="button"
-                          role="tab"
-                          aria-selected={mode === key}
-                          className={`lw-mode-tab ${mode === key ? 'active' : ''}`}
-                          onClick={() =>
-                            setProjectMode((prev) => ({ ...prev, [group.projectName]: key }))
-                          }
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-
-                    {group.exists && (
-                      <>
-                        {/* Status Dropdown */}
-                        <div className="lw-menu-wrap" data-status-menu>
-                          <button
-                            type="button"
-                            className={`lw-status-trigger ${menuOpen ? 'open' : ''}`}
-                            onClick={() =>
-                              setStatusMenuProject(menuOpen ? null : group.projectName)
-                            }
-                          >
-                            <span className={`lw-status-dot ${curStatus}`} />
-                            <span>{curStatusLabel}</span>
-                            <IconChevronDown size={12} />
-                          </button>
-
-                          {menuOpen && (
-                            <div className="lw-menu" role="menu">
-                              {TASK_STATUS_OPTIONS.map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  role="menuitem"
-                                  className={`lw-menu-item ${curStatus === opt.value ? 'active' : ''}`}
-                                  onClick={() => void handleSelectStatus(group, opt.value)}
-                                >
-                                  <span className={`lw-status-dot ${opt.value}`} />
-                                  <span style={{ flex: 1 }}>{opt.label}</span>
-                                  {curStatus === opt.value && <IconCheck size={12} />}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          className="lw-icon-btn"
-                          style={{ height: 26, minWidth: 26 }}
-                          title="打开原文"
-                          onClick={() => onOpenFile(group.fileRelPath)}
-                        >
-                          <IconFile size={14} />
-                        </button>
-                      </>
-                    )}
-                  </div>
-                </div>
-
-                {/* Single active view: 任务 / 日志 / 反思 */}
-                {mode === 'task' ? (
-                  <div className="lw-list">
-                    {sortedTasks.map((task) => {
-                      const rowKey = `${group.fileRelPath}:${task.lineIndex}`
-                      const durOpen = durationOpenKey === rowKey
-                      const prioOpen = prioOpenKey === rowKey
-                      const taskPrio = normalizePriority(task.priority)
-                      const displayText = cleanTaskDisplayText(task.text, task.minutes !== null)
-
-                      const applyDuration = (mins: number | null) => {
-                        if (!task.checked && mins !== null) {
-                          void handleToggleTask(group, task.lineIndex, mins)
-                        } else {
-                          void handleSetMinutes(group, task.lineIndex, mins)
-                        }
-                      }
-
-                      return (
-                        <div key={task.lineIndex} className="lw-item-row" style={{ alignItems: 'center' }}>
-                          <button
-                            type="button"
-                            className={`lw-check ${task.checked ? 'checked' : ''}`}
-                            style={{ marginTop: 0 }}
-                            onClick={() => void handleToggleTask(group, task.lineIndex)}
-                            aria-label={task.checked ? '取消完成' : '标记完成'}
-                          >
-                            {task.checked && <IconCheck />}
-                          </button>
-
-                          <div className={`lw-item-title ${task.checked ? 'lw-item-done' : ''}`}>
-                            {displayText}
-                            {task.fromDate && (
-                              <span className="lw-muted" style={{ marginLeft: 8 }}>
-                                {task.fromDate}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Right aligned: [高/中/低] + [20 min] */}
-                          <div className="lw-row" style={{ gap: 8, flexShrink: 0 }}>
-                            <div data-prio-menu style={{ display: 'inline-flex', alignItems: 'center' }}>
-                              {prioOpen ? (
-                                <div className="lw-prio-picker">
-                                  {PRIORITY_OPTIONS.map((opt) => (
-                                    <button
-                                      key={opt.value}
-                                      type="button"
-                                      className={`lw-prio-btn ${opt.value}`}
-                                      onClick={() =>
-                                        void handleSetPriority(group, task.lineIndex, opt.value)
-                                      }
-                                    >
-                                      {opt.label}
-                                    </button>
-                                  ))}
-                                </div>
-                              ) : (
-                                <button
-                                  type="button"
-                                  className={`lw-prio-btn ${taskPrio}`}
-                                  title="点击修改优先级"
-                                  onClick={() => setPrioOpenKey(rowKey)}
-                                >
-                                  {priorityLabel(taskPrio)}
-                                </button>
-                              )}
-                            </div>
-
-                            <div
-                              data-duration-menu
-                              style={{ minWidth: 48, display: 'flex', justifyContent: 'flex-end' }}
-                            >
-                              {durOpen ? (
-                                <form
-                                  className="lw-popover-row"
-                                  onSubmit={(e) => {
-                                    e.preventDefault()
-                                    const parsed = Number(customMinutes.trim())
-                                    if (Number.isFinite(parsed) && parsed > 0) {
-                                      applyDuration(parsed)
-                                    }
-                                  }}
-                                >
-                                  {[15, 30, 45, 60].map((m) => (
-                                    <button
-                                      key={m}
-                                      type="button"
-                                      className="lw-pop-chip"
-                                      onClick={() => applyDuration(m)}
-                                    >
-                                      {m} min
-                                    </button>
-                                  ))}
-                                  <input
-                                    className="lw-inline-input"
-                                    style={{
-                                      width: 44,
-                                      fontSize: 12,
-                                      padding: '2px 4px',
-                                      textAlign: 'center',
-                                    }}
-                                    placeholder="min"
-                                    value={customMinutes}
-                                    onChange={(e) => setCustomMinutes(e.target.value)}
-                                    autoFocus
-                                  />
-                                  {task.minutes !== null && (
-                                    <button
-                                      type="button"
-                                      className="lw-pop-chip"
-                                      title="清除耗时"
-                                      onClick={() => applyDuration(null)}
-                                    >
-                                      清除
-                                    </button>
-                                  )}
-                                </form>
-                              ) : task.minutes !== null ? (
-                                <button
-                                  type="button"
-                                  className="lw-time-btn"
-                                  title="点击修改耗时"
-                                  onClick={() => {
-                                    setCustomMinutes(String(task.minutes ?? ''))
-                                    setDurationOpenKey(rowKey)
-                                  }}
-                                >
-                                  {task.minutes} min
-                                </button>
-                              ) : (
-                                <div className="lw-hover-actions">
-                                  <button
-                                    type="button"
-                                    className="lw-icon-btn"
-                                    style={{ height: 24, minWidth: 24, padding: '0 5px' }}
-                                    title="记录用时"
-                                    onClick={() => {
-                                      setCustomMinutes('')
-                                      setDurationOpenKey(rowKey)
-                                    }}
-                                  >
-                                    <IconClock size={13} />
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )
-                    })}
-
-                    {/* Add Task Row — priority picker appears cleanly once typing */}
-                    <form
-                      className="lw-item-row"
-                      style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        void handleAddTask(group.projectName)
-                      }}
-                    >
-                      <span className="lw-bullet-slot">
-                        <IconPlus size={14} />
-                      </span>
-                      <input
-                        className="lw-inline-input"
-                        style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                        value={newTaskInputs[group.projectName] ?? ''}
-                        onChange={(e) =>
-                          setNewTaskInputs((prev) => ({
-                            ...prev,
-                            [group.projectName]: e.target.value,
-                          }))
-                        }
-                        placeholder="添加任务"
-                      />
-                      {((newTaskInputs[group.projectName] ?? '').trim() ||
-                        newPrioOpenProject === group.projectName) && (
-                        <div
-                          className="lw-row"
-                          style={{ gap: 8, flexShrink: 0 }}
-                          data-new-prio-menu
-                        >
-                          {newPrioOpenProject === group.projectName ? (
-                            <div className="lw-prio-picker">
-                              {PRIORITY_OPTIONS.map((opt) => (
-                                <button
-                                  key={opt.value}
-                                  type="button"
-                                  className={`lw-prio-btn ${opt.value}`}
-                                  onClick={() => {
-                                    setNewTaskPriority((prev) => ({
-                                      ...prev,
-                                      [group.projectName]: opt.value,
-                                    }))
-                                    setNewPrioOpenProject(null)
-                                  }}
-                                >
-                                  {opt.label}
-                                </button>
-                              ))}
-                            </div>
-                          ) : (
-                            <button
-                              type="button"
-                              className={`lw-prio-btn ${draftPrio}`}
-                              title="新任务优先级（点击切换高/中/低）"
-                              onClick={() => setNewPrioOpenProject(group.projectName)}
-                            >
-                              {priorityLabel(draftPrio)}
-                            </button>
-                          )}
-                          <span style={{ minWidth: 48 }} />
-                        </div>
-                      )}
-                    </form>
-                  </div>
-                ) : mode === 'log' ? (
-                  <div className="lw-list">
-                    {group.logs.map((l, i) => (
-                      <div key={`l-${i}`} className="lw-item-row">
-                        <span className="lw-bullet-slot">
-                          <span className="lw-bullet-dot" />
-                        </span>
-                        <div className="lw-item-title">{cleanDisplayBullet(l)}</div>
-                      </div>
-                    ))}
-                    <form
-                      className="lw-item-row"
-                      style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        void handleAppendNote(group, 'log')
-                      }}
-                    >
-                      <span className="lw-bullet-slot">
-                        <IconPlus size={14} />
-                      </span>
-                      <input
-                        className="lw-inline-input"
-                        style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                        value={logInputs[group.projectName] ?? ''}
-                        onChange={(e) =>
-                          setLogInputs((prev) => ({
-                            ...prev,
-                            [group.projectName]: e.target.value,
-                          }))
-                        }
-                        placeholder="添加日志"
-                      />
-                    </form>
-                  </div>
-                ) : (
-                  <div className="lw-list">
-                    {group.reflections.map((r, i) => (
-                      <div key={`r-${i}`} className="lw-item-row">
-                        <span className="lw-bullet-slot">
-                          <span className="lw-bullet-dot reflection" />
-                        </span>
-                        <div className="lw-item-title">{cleanDisplayBullet(r)}</div>
-                      </div>
-                    ))}
-                    <form
-                      className="lw-item-row"
-                      style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-                      onSubmit={(e) => {
-                        e.preventDefault()
-                        void handleAppendNote(group, 'reflection')
-                      }}
-                    >
-                      <span className="lw-bullet-slot">
-                        <IconPlus size={14} />
-                      </span>
-                      <input
-                        className="lw-inline-input"
-                        style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                        value={reflectionInputs[group.projectName] ?? ''}
-                        onChange={(e) =>
-                          setReflectionInputs((prev) => ({
-                            ...prev,
-                            [group.projectName]: e.target.value,
-                          }))
-                        }
-                        placeholder="添加反思"
-                      />
-                    </form>
-                  </div>
-                )}
-              </section>
-            )
-          })}
+          {activeGroups.map((group) => (
+            <ProjectTaskPanel
+              key={group.projectName}
+              group={group}
+              title={group.projectName}
+              onToggleTask={handleToggleTask}
+              onSetMinutes={handleSetMinutes}
+              onSetPriority={handleSetPriority}
+              onAddTask={handleAddTask}
+              onSelectStatus={handleSelectStatus}
+              onAppendNote={handleAppendNote}
+              onOpenFile={onOpenFile}
+            />
+          ))}
         </div>
       )}
 

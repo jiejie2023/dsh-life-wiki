@@ -1,8 +1,17 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import type { BoardSnapshot, IdeaSummary, ProjectCard, ProjectStatus } from '../../shared/types.ts'
+import type {
+  BoardSnapshot,
+  IdeaSummary,
+  ProjectCard,
+  ProjectStatus,
+  ProjectTaskGroup,
+  TaskFileStatus,
+  TaskPriority,
+} from '../../shared/types.ts'
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
 import {
+  IconCalendar,
   IconCheck,
   IconChevronDown,
   IconChevronLeft,
@@ -12,6 +21,7 @@ import {
   IconX,
 } from '../components/Icons.tsx'
 import { MarkdownView } from '../components/MarkdownView.tsx'
+import { ProjectTaskPanel, priorityLabel } from '../components/ProjectTaskPanel.tsx'
 
 type LifeCycleTab = 'doing' | 'todo' | 'pause' | 'ideas' | 'archived'
 type DetailTab = 'plan' | 'tasks' | 'resources' | 'reviews' | 'outputs'
@@ -50,6 +60,26 @@ function formatShortDate(iso: string): string {
   return `${Number(m[2])}月${Number(m[3])}日`
 }
 
+function formatPillDate(iso: string, todayIso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  const short = m ? `${m[2]}-${m[3]}` : iso
+  return iso === todayIso ? `今天 ${short}` : short
+}
+
+function splitQuickIdea(raw: string): { title: string; body: string } {
+  const text = raw.trim()
+  const colonIdx = text.search(/[：:]/)
+  if (colonIdx > 0 && colonIdx <= 28) {
+    return {
+      title: text.slice(0, colonIdx).trim(),
+      body: text.slice(colonIdx + 1).trim() || text,
+    }
+  }
+  const cleanTitle = text.replace(/[<>:"/\\|?*]/g, '').trim()
+  const title = cleanTitle.length > 28 ? cleanTitle.slice(0, 28).trim() : cleanTitle
+  return { title, body: text }
+}
+
 function stripLeadingNumber(text: string): string {
   return text.replace(/^\s*\d+[.、]\s*/, '').trim()
 }
@@ -80,11 +110,20 @@ export function ProjectsView({
   const [inlineDoc, setInlineDoc] = useState<{ path: string; content: string } | null>(null)
   const [inlineDocLoading, setInlineDocLoading] = useState(false)
 
-  // Modals
-  const [showNewIdea, setShowNewIdea] = useState(false)
-  const [ideaTitle, setIdeaTitle] = useState('')
-  const [ideaBody, setIdeaBody] = useState('')
+  // Interactive Tasks tab state inside Project Detail
+  const [selectedTaskDate, setSelectedTaskDate] = useState<string>(snapshot.date)
+  const [historicalTaskData, setHistoricalTaskData] = useState<{
+    projectName: string
+    date: string
+    group: ProjectTaskGroup | null
+  } | null>(null)
+  const [historicalTaskLoading, setHistoricalTaskLoading] = useState(false)
+  const taskDateInputRef = useRef<HTMLInputElement | null>(null)
 
+  // Top quick-idea capture bar (matching Today's top diary bar)
+  const [quickIdeaText, setQuickIdeaText] = useState('')
+
+  // Modals
   const [showNewProject, setShowNewProject] = useState(false)
   const [projName, setProjName] = useState('')
   const [projArea, setProjArea] = useState(snapshot.areas[0] ?? '个人')
@@ -182,6 +221,40 @@ export function ProjectsView({
     }
   }, [activeDetail, detailTab, snapshot])
 
+  // Load historical date tasks when viewing a non-today date in Project Tasks tab
+  useEffect(() => {
+    if (!activeDetail || activeDetail.archived || detailTab !== 'tasks') return
+    if (selectedTaskDate === snapshot.date) return
+    let alive = true
+    setHistoricalTaskLoading(true)
+    api
+      .getSnapshot(selectedTaskDate)
+      .then((res) => {
+        if (!alive) return
+        const grp = res.today.groups.find((g) => g.projectName === activeDetail.name) ?? null
+        setHistoricalTaskData({
+          projectName: activeDetail.name,
+          date: selectedTaskDate,
+          group: grp,
+        })
+      })
+      .catch(() => {
+        if (alive) {
+          setHistoricalTaskData({
+            projectName: activeDetail.name,
+            date: selectedTaskDate,
+            group: null,
+          })
+        }
+      })
+      .finally(() => {
+        if (alive) setHistoricalTaskLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [activeDetail?.name, activeDetail?.archived, detailTab, selectedTaskDate, snapshot.date])
+
   // Close popovers on outside click
   useEffect(() => {
     if (!statusMenuOpen && !areaMenuOpen && !editingDateField) return
@@ -199,8 +272,7 @@ export function ProjectsView({
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
-      if (showNewIdea) setShowNewIdea(false)
-      else if (showNewProject) setShowNewProject(false)
+      if (showNewProject) setShowNewProject(false)
       else if (promoteTarget) setPromoteTarget(null)
       else if (cancelTarget) setCancelTarget(null)
       else if (statusMenuOpen || areaMenuOpen || editingDateField) {
@@ -214,7 +286,6 @@ export function ProjectsView({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [
-    showNewIdea,
     showNewProject,
     promoteTarget,
     cancelTarget,
@@ -228,11 +299,204 @@ export function ProjectsView({
     setSelectedProjectName(p.name)
     setSelectedArchived(p.archived)
     setDetailTab('plan')
+    setSelectedTaskDate(p.archived ? (p.taskFiles[0]?.date ?? snapshot.date) : snapshot.date)
+    setHistoricalTaskData(null)
     setNewPlanText('')
     setGoalDraft(null)
     setStatusMenuOpen(false)
     setAreaMenuOpen(false)
     setEditingDateField(null)
+  }
+
+  // Interactive Tasks helpers inside Project Detail (supports today & any historical/future date)
+  const buildEmptyTaskGroup = (project: ProjectCard, date: string): ProjectTaskGroup => ({
+    projectName: project.name,
+    projectStatus: project.status,
+    area: project.area,
+    fileRelPath: `projects/${project.name}/01_tasks/${date}.md`,
+    exists: false,
+    status: null,
+    valid: true,
+    formatIssues: [],
+    tasks: [],
+    logs: [],
+    reflections: [],
+    totalMinutes: 0,
+  })
+
+  const runProjectTaskAction = (
+    project: ProjectCard,
+    date: string,
+    action: () => Promise<unknown>,
+    patchGroup: (g: ProjectTaskGroup) => ProjectTaskGroup,
+  ) => {
+    const isTodayDate = date === snapshot.date
+    if (!isTodayDate) {
+      setHistoricalTaskData((prev) => {
+        const base =
+          prev && prev.projectName === project.name && prev.date === date && prev.group
+            ? prev.group
+            : buildEmptyTaskGroup(project, date)
+        return { projectName: project.name, date, group: patchGroup(base) }
+      })
+    }
+    void onRunAction(
+      async () => {
+        await action()
+        if (!isTodayDate) {
+          const fresh = await api.getSnapshot(date)
+          const grp = fresh.today.groups.find((g) => g.projectName === project.name) ?? null
+          setHistoricalTaskData({ projectName: project.name, date, group: grp })
+        }
+      },
+      isTodayDate
+        ? {
+            optimistic: (prev) => ({
+              ...prev,
+              today: {
+                ...prev.today,
+                groups: prev.today.groups.map((g) =>
+                  g.projectName === project.name ? patchGroup(g) : g,
+                ),
+              },
+            }),
+          }
+        : undefined,
+    )
+  }
+
+  const handleProjectToggleTask = (
+    project: ProjectCard,
+    group: ProjectTaskGroup,
+    lineIndex: number,
+    minutes?: number,
+  ) => {
+    runProjectTaskAction(
+      project,
+      selectedTaskDate,
+      () => api.toggleTask(group.fileRelPath, lineIndex, minutes),
+      (g) => {
+        const nextTasks = g.tasks.map((t) => {
+          if (t.lineIndex !== lineIndex) return t
+          const nextChecked = !t.checked
+          return {
+            ...t,
+            checked: nextChecked,
+            minutes: nextChecked ? (minutes ?? t.minutes) : t.minutes,
+          }
+        })
+        return {
+          ...g,
+          tasks: nextTasks,
+          totalMinutes: nextTasks.reduce((s, t) => s + (t.minutes ?? 0), 0),
+        }
+      },
+    )
+  }
+
+  const handleProjectSetMinutes = (
+    project: ProjectCard,
+    group: ProjectTaskGroup,
+    lineIndex: number,
+    minutes: number | null,
+  ) => {
+    runProjectTaskAction(
+      project,
+      selectedTaskDate,
+      () => api.setTaskMinutes(group.fileRelPath, lineIndex, minutes),
+      (g) => {
+        const nextTasks = g.tasks.map((t) =>
+          t.lineIndex === lineIndex ? { ...t, minutes } : t,
+        )
+        return {
+          ...g,
+          tasks: nextTasks,
+          totalMinutes: nextTasks.reduce((s, t) => s + (t.minutes ?? 0), 0),
+        }
+      },
+    )
+  }
+
+  const handleProjectSetPriority = (
+    project: ProjectCard,
+    group: ProjectTaskGroup,
+    lineIndex: number,
+    priority: TaskPriority,
+  ) => {
+    runProjectTaskAction(
+      project,
+      selectedTaskDate,
+      () => api.setTaskPriority(group.fileRelPath, lineIndex, priority),
+      (g) => ({
+        ...g,
+        tasks: g.tasks.map((t) => (t.lineIndex === lineIndex ? { ...t, priority } : t)),
+      }),
+    )
+  }
+
+  const handleProjectAddTask = (
+    project: ProjectCard,
+    text: string,
+    priority: TaskPriority,
+  ) => {
+    runProjectTaskAction(
+      project,
+      selectedTaskDate,
+      () => api.addTask(project.name, text, selectedTaskDate, priority),
+      (g) => ({
+        ...g,
+        exists: true,
+        status: g.status ?? 'doing',
+        tasks: [
+          ...g.tasks,
+          {
+            lineIndex: Date.now(),
+            checked: false,
+            text: `[${priorityLabel(priority)}] ${text}`,
+            priority,
+            minutes: null,
+            fromDate: null,
+            rawLine: `- [ ] [${priorityLabel(priority)}] ${text}`,
+          },
+        ],
+      }),
+    )
+  }
+
+  const handleProjectSelectTaskStatus = (
+    project: ProjectCard,
+    group: ProjectTaskGroup,
+    next: TaskFileStatus,
+  ) => {
+    if (group.status === next) return
+    runProjectTaskAction(
+      project,
+      selectedTaskDate,
+      () => api.updateTaskStatus(group.fileRelPath, next),
+      (g) => ({ ...g, status: next }),
+    )
+  }
+
+  const handleProjectAppendNote = (
+    project: ProjectCard,
+    group: ProjectTaskGroup,
+    section: 'log' | 'reflection',
+    text: string,
+  ) => {
+    runProjectTaskAction(
+      project,
+      selectedTaskDate,
+      async () => {
+        const rel = group.exists
+          ? group.fileRelPath
+          : (await api.createTaskFile(project.name, selectedTaskDate)).relPath
+        await api.appendTaskEntry(rel, section, text)
+      },
+      (g) =>
+        section === 'log'
+          ? { ...g, exists: true, logs: [...g.logs, text] }
+          : { ...g, exists: true, reflections: [...g.reflections, text] },
+    )
   }
 
   const handleTogglePlan = async (project: ProjectCard, lineIndex: number) => {
@@ -307,16 +571,30 @@ export function ProjectsView({
     })
   }
 
-  const handleCreateIdea = async (e: React.FormEvent) => {
+  const handleQuickIdea = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!ideaTitle.trim()) return
-    const title = ideaTitle.trim()
-    const body = ideaBody.trim()
-    setIdeaTitle('')
-    setIdeaBody('')
-    setShowNewIdea(false)
-    setSubTab('ideas')
-    await onRunAction(() => api.createIdea(title, body))
+    const raw = quickIdeaText.trim()
+    if (!raw) return
+    const { title, body } = splitQuickIdea(raw)
+    if (!title) return
+    setQuickIdeaText('')
+    await onRunAction(() => api.createIdea(title, body), {
+      toast: `已记入想法「${title}」`,
+      optimistic: (prev) => ({
+        ...prev,
+        ideas: [
+          {
+            name: title,
+            relPath: `projects/00_ideas/${title}.md`,
+            status: 'idea',
+            idea: body,
+            judgment: '',
+            motivationChange: '',
+          },
+          ...prev.ideas.filter((i) => i.name !== title),
+        ],
+      }),
+    })
   }
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -802,34 +1080,148 @@ export function ProjectsView({
             )}
           </div>
         ) : detailTab === 'tasks' ? (
-          activeDetail.taskFiles.length === 0 ? (
-            <div className="lw-empty">暂无任务记录，点右上角「今日开做」开始。</div>
+          activeDetail.archived ? (
+            activeDetail.taskFiles.length === 0 ? (
+              <div className="lw-empty">暂无任务记录</div>
+            ) : (
+              <div className="lw-list">
+                {activeDetail.taskFiles.map((tf) => (
+                  <div
+                    key={tf.relPath}
+                    className="lw-project-row"
+                    style={{ padding: '11px 12px' }}
+                    onClick={() => onOpenFile(tf.relPath)}
+                  >
+                    <div className="lw-row" style={{ gap: 9 }}>
+                      <span className={`lw-status-dot ${tf.status ?? 'todo'}`} />
+                      <span className="lw-mono" style={{ fontSize: 13.5 }}>
+                        {tf.date}
+                      </span>
+                    </div>
+                    <div className="lw-row" style={{ gap: 12 }}>
+                      <span className="lw-muted">
+                        {tf.doneCount}/{tf.totalCount}
+                      </span>
+                      {tf.totalMinutes > 0 && (
+                        <span className="lw-muted">{tf.totalMinutes} min</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           ) : (
-            <div className="lw-list">
-              {activeDetail.taskFiles.map((tf) => (
-                <div
-                  key={tf.relPath}
-                  className="lw-project-row"
-                  style={{ padding: '11px 12px' }}
-                  onClick={() => onOpenFile(tf.relPath)}
-                >
-                  <div className="lw-row" style={{ gap: 9 }}>
-                    <span className={`lw-status-dot ${tf.status ?? 'todo'}`} />
-                    <span className="lw-mono" style={{ fontSize: 13.5 }}>
-                      {tf.date}
-                    </span>
+            (() => {
+              const fileByDate = new Map(activeDetail.taskFiles.map((tf) => [tf.date, tf]))
+              const dateList = Array.from(
+                new Set([
+                  snapshot.date,
+                  selectedTaskDate,
+                  ...activeDetail.taskFiles.map((tf) => tf.date),
+                ]),
+              )
+                .sort((a, b) => b.localeCompare(a))
+                .slice(0, 7)
+
+              const isTodaySelected = selectedTaskDate === snapshot.date
+              const activeGroup: ProjectTaskGroup = isTodaySelected
+                ? (snapshot.today.groups.find((g) => g.projectName === activeDetail.name) ??
+                  buildEmptyTaskGroup(activeDetail, selectedTaskDate))
+                : historicalTaskData &&
+                    historicalTaskData.projectName === activeDetail.name &&
+                    historicalTaskData.date === selectedTaskDate &&
+                    historicalTaskData.group
+                  ? historicalTaskData.group
+                  : buildEmptyTaskGroup(activeDetail, selectedTaskDate)
+
+              return (
+                <div className="lw-stack" style={{ gap: 14 }}>
+                  {/* Quiet Date Switcher Pills */}
+                  <div className="lw-row" style={{ gap: 6, flexWrap: 'wrap', marginLeft: -8 }}>
+                    {dateList.map((d) => {
+                      const tf = fileByDate.get(d)
+                      return (
+                        <button
+                          key={d}
+                          type="button"
+                          className={`lw-mode-tab ${selectedTaskDate === d ? 'active' : ''}`}
+                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                          onClick={() => setSelectedTaskDate(d)}
+                        >
+                          {tf && (
+                            <span
+                              className={`lw-status-dot ${tf.status ?? 'todo'}`}
+                              style={{ width: 6, height: 6 }}
+                            />
+                          )}
+                          <span>{formatPillDate(d, snapshot.date)}</span>
+                        </button>
+                      )
+                    })}
+
+                    <button
+                      type="button"
+                      className="lw-icon-btn"
+                      style={{ height: 26, minWidth: 26 }}
+                      title="选择其他日期"
+                      onClick={() => {
+                        try {
+                          taskDateInputRef.current?.showPicker?.()
+                        } catch {
+                          taskDateInputRef.current?.focus()
+                          taskDateInputRef.current?.click()
+                        }
+                      }}
+                    >
+                      <IconCalendar size={13} />
+                    </button>
+                    <input
+                      ref={taskDateInputRef}
+                      type="date"
+                      value={selectedTaskDate}
+                      onChange={(e) => {
+                        if (e.target.value) setSelectedTaskDate(e.target.value)
+                      }}
+                      style={{
+                        position: 'absolute',
+                        opacity: 0,
+                        pointerEvents: 'none',
+                        width: 1,
+                        height: 1,
+                      }}
+                    />
                   </div>
-                  <div className="lw-row" style={{ gap: 12 }}>
-                    <span className="lw-muted">
-                      {tf.doneCount}/{tf.totalCount}
-                    </span>
-                    {tf.totalMinutes > 0 && (
-                      <span className="lw-muted">{tf.totalMinutes} min</span>
-                    )}
-                  </div>
+
+                  {!isTodaySelected && historicalTaskLoading ? (
+                    <div className="lw-muted">读取中…</div>
+                  ) : (
+                    <ProjectTaskPanel
+                      key={`${activeDetail.name}:${selectedTaskDate}`}
+                      group={activeGroup}
+                      onToggleTask={(g, idx, mins) =>
+                        handleProjectToggleTask(activeDetail, g, idx, mins)
+                      }
+                      onSetMinutes={(g, idx, mins) =>
+                        handleProjectSetMinutes(activeDetail, g, idx, mins)
+                      }
+                      onSetPriority={(g, idx, prio) =>
+                        handleProjectSetPriority(activeDetail, g, idx, prio)
+                      }
+                      onAddTask={(_, text, prio) =>
+                        handleProjectAddTask(activeDetail, text, prio)
+                      }
+                      onSelectStatus={(g, next) =>
+                        handleProjectSelectTaskStatus(activeDetail, g, next)
+                      }
+                      onAppendNote={(g, sec, text) =>
+                        handleProjectAppendNote(activeDetail, g, sec, text)
+                      }
+                      onOpenFile={onOpenFile}
+                    />
+                  )}
                 </div>
-              ))}
-            </div>
+              )
+            })()
           )
         ) : detailTab === 'resources' || detailTab === 'outputs' ? (
           inlineDocLoading ? (
@@ -868,6 +1260,32 @@ export function ProjectsView({
   // ==================== PROJECT LIST VIEW ====================
   return (
     <div className="lw-canvas">
+      {/* Top Quick Idea Capture Bar (mirrors Today's quiet diary bar) */}
+      <div className="lw-stack" style={{ gap: 6 }}>
+        <form className="lw-capture" onSubmit={(e) => void handleQuickIdea(e)}>
+          <input
+            className="lw-inline-input"
+            style={{ padding: '2px 0' }}
+            value={quickIdeaText}
+            onChange={(e) => setQuickIdeaText(e.target.value)}
+            placeholder="记一个新想法…"
+          />
+          {quickIdeaText.trim() ? (
+            <button type="submit" className="lw-btn lw-btn-sm lw-btn-primary">
+              记下
+            </button>
+          ) : snapshot.ideas.length > 0 && subTab !== 'ideas' ? (
+            <button
+              type="button"
+              className="lw-btn lw-btn-sm lw-btn-ghost"
+              onClick={() => setSubTab('ideas')}
+            >
+              待立项 {snapshot.ideas.length}
+            </button>
+          ) : null}
+        </form>
+      </div>
+
       {/* Continuous Underline Tabs + Primary Button */}
       <div className="lw-tabs-bar">
         <div className="lw-subtabs">
@@ -899,17 +1317,13 @@ export function ProjectsView({
             type="button"
             className="lw-btn lw-btn-sm lw-btn-primary"
             onClick={() => {
-              if (subTab === 'ideas') {
-                setShowNewIdea(true)
-              } else {
-                setProjArea(snapshot.areas[0] ?? '个人')
-                setProjDeadline('')
-                setShowNewProject(true)
-              }
+              setProjArea(snapshot.areas[0] ?? '个人')
+              setProjDeadline('')
+              setShowNewProject(true)
             }}
           >
             <IconPlus size={13} />
-            {subTab === 'ideas' ? '记想法' : '新建项目'}
+            新建项目
           </button>
         </div>
       </div>
@@ -1082,56 +1496,6 @@ export function ProjectsView({
               </div>
             )
           })}
-        </div>
-      )}
-
-      {/* Modal: New Idea */}
-      {showNewIdea && (
-        <div className="lw-backdrop lw-backdrop-center" onClick={() => setShowNewIdea(false)}>
-          <form
-            className="lw-modal"
-            onClick={(e) => e.stopPropagation()}
-            onSubmit={(e) => void handleCreateIdea(e)}
-          >
-            <div className="lw-panel-header">
-              <strong>记一个想法</strong>
-              <button type="button" className="lw-icon-btn" onClick={() => setShowNewIdea(false)}>
-                <IconX />
-              </button>
-            </div>
-            <div className="lw-panel-body lw-stack" style={{ gap: 12 }}>
-              <div>
-                <label className="lw-field-label">标题</label>
-                <input
-                  className="lw-input"
-                  value={ideaTitle}
-                  onChange={(e) => setIdeaTitle(e.target.value)}
-                  autoFocus
-                  required
-                />
-              </div>
-              <div>
-                <label className="lw-field-label">想法</label>
-                <textarea
-                  className="lw-textarea"
-                  value={ideaBody}
-                  onChange={(e) => setIdeaBody(e.target.value)}
-                />
-              </div>
-            </div>
-            <div className="lw-panel-footer">
-              <button
-                type="button"
-                className="lw-btn lw-btn-ghost"
-                onClick={() => setShowNewIdea(false)}
-              >
-                取消
-              </button>
-              <button type="submit" className="lw-btn lw-btn-primary">
-                保存
-              </button>
-            </div>
-          </form>
         </div>
       )}
 
