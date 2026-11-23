@@ -93,6 +93,18 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
       assert.equal(snap.projects[0]?.created, '2026-11-24')
       assert.equal(snap.projects[0]?.deadline, '2026-12-31')
 
+      // 2b. Inline update project goal & verify plan ignores empty placeholder items
+      await engine.updateProjectMeta('播客剪辑工具', {
+        goal: '完成音频去静音脚本、补齐测试并发布首版',
+      })
+      snap = await engine.getSnapshot('2026-11-24')
+      assert.equal(snap.projects[0]?.goal, '完成音频去静音脚本、补齐测试并发布首版')
+      assert.equal(snap.projects[0]?.plan.length, 0)
+      await engine.addPlanItem('播客剪辑工具', '设计 CLI 参数与去静音阈值')
+      snap = await engine.getSnapshot('2026-11-24')
+      assert.equal(snap.projects[0]?.plan.length, 1)
+      assert.match(snap.projects[0]!.plan[0]!.text, /设计 CLI 参数与去静音阈值/)
+
       // 3. Add and complete tasks with priority & minutes + append diary
       const taskFile = await engine.addTask(
         '播客剪辑工具',

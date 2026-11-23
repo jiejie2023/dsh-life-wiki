@@ -121,6 +121,7 @@ export interface LifeWikiEngine {
       created?: string
       deadline?: string
       timeframe?: string
+      goal?: string
     },
   ): Promise<void>
   togglePlanItem(projectName: string, lineIndex: number): Promise<void>
@@ -952,8 +953,6 @@ export function createLifeWikiEngine(
         '',
         '## 计划',
         '',
-        '- [ ] 1. ',
-        '',
         '## 总结',
         '',
         '**结果：** ',
@@ -1142,8 +1141,6 @@ export function createLifeWikiEngine(
           '',
           '## 计划',
           '',
-          '- [ ] 1. ',
-          '',
           '## 总结',
           '',
           '**结果：** ',
@@ -1199,7 +1196,11 @@ export function createLifeWikiEngine(
       if (patch.created !== undefined) updates.created = patch.created
       if (patch.deadline !== undefined) updates.deadline = patch.deadline
       if (patch.timeframe !== undefined) updates.timeframe = patch.timeframe
-      await writeVaultFile(relPath, updateFrontmatterFields(content, updates))
+      let next = Object.keys(updates).length > 0 ? updateFrontmatterFields(content, updates) : content
+      if (patch.goal !== undefined) {
+        next = replaceSectionBody(next, '目标', [patch.goal.trim()])
+      }
+      await writeVaultFile(relPath, next)
     },
 
     async togglePlanItem(projectName, lineIndex) {
@@ -1220,11 +1221,26 @@ export function createLifeWikiEngine(
       const safe = sanitizeSegment(projectName)
       const relPath = `projects/${safe}/${safe}.md`
       const { content } = await readVaultFile(relPath)
-      const existing = parsePlanItems(splitLines(content).lines)
+      const parsed = splitLines(content)
+      const sec = findSection(parsed.lines, '计划')
+      let cleanedContent = content
+      if (sec) {
+        const filtered = [...parsed.lines]
+        let removed = false
+        for (let i = sec.endLine - 1; i >= sec.startLine; i -= 1) {
+          const m = /^-\s+\[[ xX]\]\s*(.*)$/.exec((filtered[i] ?? '').trim())
+          if (m && !m[1]!.replace(/^\d+[.、]\s*/, '').trim()) {
+            filtered.splice(i, 1)
+            removed = true
+          }
+        }
+        if (removed) cleanedContent = joinLines(filtered, parsed.eol)
+      }
+      const existing = parsePlanItems(splitLines(cleanedContent).lines)
       const nextNum = existing.length + 1
       const hasNumber = /^\d+\.\s+/.test(cleaned)
       const newLine = `- [ ] ${hasNumber ? cleaned : `${nextNum}. ${cleaned}`}`
-      await writeVaultFile(relPath, appendLineToSection(content, '计划', newLine))
+      await writeVaultFile(relPath, appendLineToSection(cleanedContent, '计划', newLine))
     },
 
     async addInboxItem(text, dateStr) {

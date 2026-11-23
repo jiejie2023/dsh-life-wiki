@@ -1,10 +1,20 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import type { BoardSnapshot, IdeaSummary, ProjectCard, ProjectStatus } from '../../shared/types.ts'
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
-import { IconCheck, IconFile, IconPlus, IconProjectPie, IconX } from '../components/Icons.tsx'
+import {
+  IconCheck,
+  IconChevronDown,
+  IconChevronLeft,
+  IconFile,
+  IconPlus,
+  IconProjectPie,
+  IconX,
+} from '../components/Icons.tsx'
+import { MarkdownView } from '../components/MarkdownView.tsx'
 
-type LifeCycleTab = 'doing' | 'ideas' | 'todo' | 'pause' | 'archived'
+type LifeCycleTab = 'doing' | 'todo' | 'pause' | 'ideas' | 'archived'
+type DetailTab = 'plan' | 'resources' | 'outputs' | 'history'
 
 interface ProjectsViewProps {
   snapshot: BoardSnapshot
@@ -12,6 +22,13 @@ interface ProjectsViewProps {
   onJumpToToday: () => void
   onRunAction: RunActionFn
 }
+
+const STATUS_OPTIONS: Array<{ value: ProjectStatus; label: string }> = [
+  { value: 'todo', label: '未开始' },
+  { value: 'doing', label: '进行中' },
+  { value: 'pause', label: '暂停' },
+  { value: 'done', label: '已完成并归档' },
+]
 
 const STATUS_LABELS: Record<ProjectStatus, string> = {
   doing: '进行中',
@@ -33,6 +50,10 @@ function formatShortDate(iso: string): string {
   return `${Number(m[2])}月${Number(m[3])}日`
 }
 
+function stripLeadingNumber(text: string): string {
+  return text.replace(/^\s*\d+[.、]\s*/, '').trim()
+}
+
 export function ProjectsView({
   snapshot,
   onOpenFile,
@@ -40,9 +61,24 @@ export function ProjectsView({
   onRunAction,
 }: ProjectsViewProps) {
   const [subTab, setSubTab] = useState<LifeCycleTab>('doing')
+  const [areaFilter, setAreaFilter] = useState<string>('ALL')
+
+  // Full-page Project Detail state
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null)
   const [selectedArchived, setSelectedArchived] = useState(false)
+  const [detailTab, setDetailTab] = useState<DetailTab>('plan')
   const [newPlanText, setNewPlanText] = useState('')
+  const [goalDraft, setGoalDraft] = useState<string | null>(null)
+  const goalRef = useRef<HTMLTextAreaElement | null>(null)
+
+  // Compact metadata popovers inside detail view
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
+  const [areaMenuOpen, setAreaMenuOpen] = useState(false)
+  const [editingDateField, setEditingDateField] = useState<'created' | 'deadline' | null>(null)
+
+  // Inline markdown content for 资料 / 产出 tabs
+  const [inlineDoc, setInlineDoc] = useState<{ path: string; content: string } | null>(null)
+  const [inlineDocLoading, setInlineDocLoading] = useState(false)
 
   // Modals
   const [showNewIdea, setShowNewIdea] = useState(false)
@@ -52,19 +88,114 @@ export function ProjectsView({
   const [showNewProject, setShowNewProject] = useState(false)
   const [projName, setProjName] = useState('')
   const [projArea, setProjArea] = useState(snapshot.areas[0] ?? '个人')
-  const [projCreated, setProjCreated] = useState(() => localTodayIso())
   const [projDeadline, setProjDeadline] = useState('')
   const [projGoal, setProjGoal] = useState('')
 
   const [promoteTarget, setPromoteTarget] = useState<IdeaSummary | null>(null)
   const [promoteArea, setPromoteArea] = useState(snapshot.areas[0] ?? '个人')
-  const [promoteCreated, setPromoteCreated] = useState(() => localTodayIso())
   const [promoteDeadline, setPromoteDeadline] = useState('')
   const [promoteGoal, setPromoteGoal] = useState('')
 
   const [cancelTarget, setCancelTarget] = useState<IdeaSummary | null>(null)
   const [cancelReason, setCancelReason] = useState('')
 
+  const doingList = useMemo(
+    () => snapshot.projects.filter((p) => p.status === 'doing'),
+    [snapshot.projects],
+  )
+  const todoList = useMemo(
+    () => snapshot.projects.filter((p) => p.status === 'todo'),
+    [snapshot.projects],
+  )
+  const pauseList = useMemo(
+    () => snapshot.projects.filter((p) => p.status === 'pause'),
+    [snapshot.projects],
+  )
+  const archivedList = useMemo(
+    () => [
+      ...snapshot.projects.filter((p) => p.status === 'done' || p.status === 'cancel'),
+      ...snapshot.archivedProjects,
+    ],
+    [snapshot.projects, snapshot.archivedProjects],
+  )
+
+  const currentRawList =
+    subTab === 'doing'
+      ? doingList
+      : subTab === 'todo'
+        ? todoList
+        : subTab === 'pause'
+          ? pauseList
+          : archivedList
+
+  const tabAreas = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of currentRawList) {
+      if (p.area) set.add(p.area)
+    }
+    return Array.from(set)
+  }, [currentRawList])
+
+  const visibleProjects = useMemo(() => {
+    if (areaFilter === 'ALL' || !tabAreas.includes(areaFilter)) return currentRawList
+    return currentRawList.filter((p) => p.area === areaFilter)
+  }, [currentRawList, areaFilter, tabAreas])
+
+  const activeDetail: ProjectCard | null = selectedProjectName
+    ? ((selectedArchived ? archivedList : snapshot.projects).find(
+        (p) => p.name === selectedProjectName,
+      ) ??
+        snapshot.archivedProjects.find((p) => p.name === selectedProjectName) ??
+        null)
+    : null
+
+  // Auto-size inline editable goal textarea to fit content cleanly
+  const displayedGoal = goalDraft ?? activeDetail?.goal ?? ''
+  useEffect(() => {
+    const el = goalRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [displayedGoal, activeDetail?.name])
+
+  // Load inline 资料 / 产出 markdown when tab changes
+  useEffect(() => {
+    if (!activeDetail) return
+    if (detailTab !== 'resources' && detailTab !== 'outputs') return
+    const targetPath =
+      detailTab === 'resources' ? activeDetail.resourcesRelPath : activeDetail.outputsRelPath
+    let alive = true
+    setInlineDocLoading(true)
+    api
+      .readFile(targetPath)
+      .then((res) => {
+        if (alive) setInlineDoc({ path: targetPath, content: res.content })
+      })
+      .catch(() => {
+        if (alive) setInlineDoc({ path: targetPath, content: '' })
+      })
+      .finally(() => {
+        if (alive) setInlineDocLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [activeDetail, detailTab, snapshot])
+
+  // Close popovers on outside click
+  useEffect(() => {
+    if (!statusMenuOpen && !areaMenuOpen && !editingDateField) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      if (statusMenuOpen && !t?.closest('[data-proj-status]')) setStatusMenuOpen(false)
+      if (areaMenuOpen && !t?.closest('[data-proj-area]')) setAreaMenuOpen(false)
+      if (editingDateField && !t?.closest('[data-proj-date]')) setEditingDateField(null)
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [statusMenuOpen, areaMenuOpen, editingDateField])
+
+  // Esc key handling
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return
@@ -72,37 +203,36 @@ export function ProjectsView({
       else if (showNewProject) setShowNewProject(false)
       else if (promoteTarget) setPromoteTarget(null)
       else if (cancelTarget) setCancelTarget(null)
-      else if (selectedProjectName) setSelectedProjectName(null)
+      else if (statusMenuOpen || areaMenuOpen || editingDateField) {
+        setStatusMenuOpen(false)
+        setAreaMenuOpen(false)
+        setEditingDateField(null)
+      } else if (selectedProjectName) {
+        setSelectedProjectName(null)
+      }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [showNewIdea, showNewProject, promoteTarget, cancelTarget, selectedProjectName])
+  }, [
+    showNewIdea,
+    showNewProject,
+    promoteTarget,
+    cancelTarget,
+    statusMenuOpen,
+    areaMenuOpen,
+    editingDateField,
+    selectedProjectName,
+  ])
 
-  const doingList = snapshot.projects.filter((p) => p.status === 'doing')
-  const todoList = snapshot.projects.filter((p) => p.status === 'todo')
-  const pauseList = snapshot.projects.filter(
-    (p) => p.status === 'pause' || p.status === 'done' || p.status === 'cancel',
-  )
-
-  const visibleProjects =
-    subTab === 'doing'
-      ? doingList
-      : subTab === 'todo'
-        ? todoList
-        : subTab === 'pause'
-          ? pauseList
-          : snapshot.archivedProjects
-
-  const activeDetail: ProjectCard | null = selectedProjectName
-    ? ((selectedArchived ? snapshot.archivedProjects : snapshot.projects).find(
-        (p) => p.name === selectedProjectName,
-      ) ?? null)
-    : null
-
-  const openDetail = (p: ProjectCard) => {
+  const openProjectDetail = (p: ProjectCard) => {
     setSelectedProjectName(p.name)
     setSelectedArchived(p.archived)
+    setDetailTab('plan')
     setNewPlanText('')
+    setGoalDraft(null)
+    setStatusMenuOpen(false)
+    setAreaMenuOpen(false)
+    setEditingDateField(null)
   }
 
   const handleTogglePlan = async (project: ProjectCard, lineIndex: number) => {
@@ -137,9 +267,41 @@ export function ProjectsView({
                 ...p,
                 plan: [
                   ...p.plan,
-                  { lineIndex: -Date.now(), checked: false, text: val, rawLine: `- [ ] ${val}` },
+                  { lineIndex: Date.now(), checked: false, text: val, rawLine: `- [ ] ${val}` },
                 ],
               },
+        ),
+      }),
+    })
+  }
+
+  const handlePushPlanToToday = async (project: ProjectCard, text: string) => {
+    const clean = stripLeadingNumber(text)
+    if (!clean) return
+    await onRunAction(() => api.addTask(project.name, clean, undefined, 'medium'), {
+      toast: '已加入今日任务',
+    })
+  }
+
+  const handleDetailStatusSelect = async (project: ProjectCard, next: ProjectStatus) => {
+    setStatusMenuOpen(false)
+    if (next === 'done') {
+      await onRunAction(
+        async () => {
+          await api.archiveProject(project.name, 'done')
+          setSelectedProjectName(null)
+          setSubTab('archived')
+        },
+        { toast: `「${project.name}」已完成并归档` },
+      )
+      return
+    }
+    if (project.status === next) return
+    await onRunAction(() => api.updateProjectMeta(project.name, { status: next }), {
+      optimistic: (prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.name === project.name ? { ...p, status: next } : p,
         ),
       }),
     })
@@ -161,11 +323,9 @@ export function ProjectsView({
     e.preventDefault()
     if (!projName.trim()) return
     const name = projName.trim()
-    const created = projCreated.trim() || localTodayIso()
     const deadline = projDeadline.trim()
     const goal = projGoal.trim() || undefined
     setProjName('')
-    setProjCreated(localTodayIso())
     setProjDeadline('')
     setProjGoal('')
     setShowNewProject(false)
@@ -174,7 +334,7 @@ export function ProjectsView({
       api.createProject({
         name,
         area: projArea,
-        created,
+        created: localTodayIso(),
         deadline,
         goal,
       }),
@@ -185,7 +345,6 @@ export function ProjectsView({
     e.preventDefault()
     if (!promoteTarget) return
     const target = promoteTarget
-    const created = promoteCreated.trim() || localTodayIso()
     const deadline = promoteDeadline.trim()
     const goal = promoteGoal.trim() || undefined
     setPromoteTarget(null)
@@ -194,7 +353,7 @@ export function ProjectsView({
       () =>
         api.promoteIdea(target.name, {
           area: promoteArea,
-          created,
+          created: localTodayIso(),
           deadline,
           goal,
         }),
@@ -212,61 +371,558 @@ export function ProjectsView({
     await onRunAction(() => api.cancelIdea(target.name, reason))
   }
 
-  const updateDetailDate = (project: ProjectCard, field: 'created' | 'deadline', val: string) => {
-    void onRunAction(() => api.updateProjectMeta(project.name, { [field]: val }), {
-      optimistic: (prev) => ({
-        ...prev,
-        projects: prev.projects.map((p) =>
-          p.name === project.name ? { ...p, [field]: val } : p,
-        ),
-      }),
-    })
+  // ==================== FULL-PAGE THINGS 3 PROJECT DETAIL VIEW ====================
+  if (activeDetail) {
+    const donePlan = activeDetail.plan.filter((i) => i.checked).length
+    const totalPlan = activeDetail.plan.length
+    const isOverdue =
+      !activeDetail.archived &&
+      activeDetail.status !== 'done' &&
+      Boolean(activeDetail.deadline) &&
+      activeDetail.deadline < snapshot.date
+
+    return (
+      <div className="lw-canvas">
+        {/* Top Back & Actions */}
+        <div className="lw-between">
+          <button
+            type="button"
+            className="lw-btn lw-btn-sm lw-btn-ghost"
+            style={{ marginLeft: -6, paddingLeft: 4, gap: 4 }}
+            onClick={() => setSelectedProjectName(null)}
+          >
+            <IconChevronLeft size={15} />
+            项目
+          </button>
+
+          <div className="lw-row" style={{ gap: 6 }}>
+            {activeDetail.archived ? (
+              <button
+                type="button"
+                className="lw-btn lw-btn-sm lw-btn-primary"
+                onClick={() =>
+                  void onRunAction(
+                    async () => {
+                      await api.restoreProject(activeDetail.name)
+                      setSelectedArchived(false)
+                      setSubTab('doing')
+                    },
+                    { toast: '已恢复项目' },
+                  )
+                }
+              >
+                恢复项目
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="lw-btn lw-btn-sm lw-btn-ghost"
+                  onClick={() =>
+                    void onRunAction(
+                      async () => {
+                        await api.archiveProject(activeDetail.name, 'done')
+                        setSelectedProjectName(null)
+                        setSubTab('archived')
+                      },
+                      { toast: '已归档' },
+                    )
+                  }
+                >
+                  归档
+                </button>
+                <button
+                  type="button"
+                  className="lw-btn lw-btn-sm lw-btn-primary"
+                  onClick={() =>
+                    void onRunAction(async () => {
+                      await api.createTaskFile(activeDetail.name)
+                      onJumpToToday()
+                    })
+                  }
+                >
+                  今日开做
+                </button>
+              </>
+            )}
+            <button
+              type="button"
+              className="lw-icon-btn"
+              title="打开主页原文"
+              onClick={() => onOpenFile(activeDetail.homepageRelPath)}
+            >
+              <IconFile size={15} />
+            </button>
+          </div>
+        </div>
+
+        {/* Title & Compact Metadata Strip */}
+        <div className="lw-stack" style={{ gap: 12 }}>
+          <div className="lw-row" style={{ gap: 11 }}>
+            <IconProjectPie ratio={totalPlan > 0 ? donePlan / totalPlan : 0} size={22} />
+            <h1 className="lw-h1">{activeDetail.name}</h1>
+          </div>
+
+          <div className="lw-meta-strip">
+            {/* Status Dropdown */}
+            {!activeDetail.archived ? (
+              <div className="lw-menu-wrap" data-proj-status>
+                <button
+                  type="button"
+                  className="lw-chip-btn"
+                  onClick={() => setStatusMenuOpen((v) => !v)}
+                >
+                  <span className={`lw-status-dot ${activeDetail.status}`} />
+                  <span>{STATUS_LABELS[activeDetail.status]}</span>
+                  <IconChevronDown size={12} />
+                </button>
+                {statusMenuOpen && (
+                  <div className="lw-menu" style={{ left: 0, right: 'auto', minWidth: 148 }}>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`lw-menu-item ${activeDetail.status === opt.value ? 'active' : ''}`}
+                        onClick={() => void handleDetailStatusSelect(activeDetail, opt.value)}
+                      >
+                        <span className={`lw-status-dot ${opt.value}`} />
+                        <span style={{ flex: 1 }}>{opt.label}</span>
+                        {activeDetail.status === opt.value && <IconCheck size={12} />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <span className="lw-chip-btn" style={{ cursor: 'default' }}>
+                <span className={`lw-status-dot ${activeDetail.status}`} />
+                {STATUS_LABELS[activeDetail.status]}
+              </span>
+            )}
+
+            {/* Area Compact Dropdown */}
+            {!activeDetail.archived ? (
+              <div className="lw-menu-wrap" data-proj-area>
+                <button
+                  type="button"
+                  className="lw-chip-btn"
+                  onClick={() => setAreaMenuOpen((v) => !v)}
+                >
+                  <span>{activeDetail.area || '选择领域'}</span>
+                  <IconChevronDown size={12} />
+                </button>
+                {areaMenuOpen && (
+                  <div className="lw-menu" style={{ left: 0, right: 'auto', minWidth: 120 }}>
+                    {Array.from(
+                      new Set([
+                        ...snapshot.areas,
+                        ...(activeDetail.area ? [activeDetail.area] : []),
+                      ]),
+                    ).map((a) => (
+                      <button
+                        key={a}
+                        type="button"
+                        className={`lw-menu-item ${activeDetail.area === a ? 'active' : ''}`}
+                        onClick={() => {
+                          setAreaMenuOpen(false)
+                          void onRunAction(
+                            () => api.updateProjectMeta(activeDetail.name, { area: a }),
+                            {
+                              optimistic: (prev) => ({
+                                ...prev,
+                                projects: prev.projects.map((p) =>
+                                  p.name === activeDetail.name ? { ...p, area: a } : p,
+                                ),
+                              }),
+                            },
+                          )
+                        }}
+                      >
+                        <span style={{ flex: 1 }}>{a}</span>
+                        {activeDetail.area === a && <IconCheck size={12} />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : activeDetail.area ? (
+              <span className="lw-chip-btn" style={{ cursor: 'default' }}>
+                {activeDetail.area}
+              </span>
+            ) : null}
+
+            {/* Created Date Chip */}
+            <div data-proj-date style={{ display: 'inline-flex', alignItems: 'center' }}>
+              {editingDateField === 'created' && !activeDetail.archived ? (
+                <input
+                  type="date"
+                  className="lw-input"
+                  style={{ width: 142, height: 27, padding: '0 8px', fontSize: 12.5 }}
+                  value={activeDetail.created}
+                  autoFocus
+                  onChange={(e) => {
+                    const val = e.target.value
+                    setEditingDateField(null)
+                    void onRunAction(
+                      () => api.updateProjectMeta(activeDetail.name, { created: val }),
+                      {
+                        optimistic: (prev) => ({
+                          ...prev,
+                          projects: prev.projects.map((p) =>
+                            p.name === activeDetail.name ? { ...p, created: val } : p,
+                          ),
+                        }),
+                      },
+                    )
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="lw-chip-btn"
+                  disabled={activeDetail.archived}
+                  onClick={() => setEditingDateField('created')}
+                >
+                  创建 {activeDetail.created ? formatShortDate(activeDetail.created) : '未设'}
+                </button>
+              )}
+            </div>
+
+            {/* Deadline Chip */}
+            <div data-proj-date style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              {editingDateField === 'deadline' && !activeDetail.archived ? (
+                <>
+                  <input
+                    type="date"
+                    className="lw-input"
+                    style={{ width: 142, height: 27, padding: '0 8px', fontSize: 12.5 }}
+                    value={activeDetail.deadline}
+                    autoFocus
+                    onChange={(e) => {
+                      const val = e.target.value
+                      setEditingDateField(null)
+                      void onRunAction(
+                        () => api.updateProjectMeta(activeDetail.name, { deadline: val }),
+                        {
+                          optimistic: (prev) => ({
+                            ...prev,
+                            projects: prev.projects.map((p) =>
+                              p.name === activeDetail.name ? { ...p, deadline: val } : p,
+                            ),
+                          }),
+                        },
+                      )
+                    }}
+                  />
+                  {activeDetail.deadline && (
+                    <button
+                      type="button"
+                      className="lw-btn lw-btn-sm lw-btn-ghost"
+                      onClick={() => {
+                        setEditingDateField(null)
+                        void onRunAction(
+                          () => api.updateProjectMeta(activeDetail.name, { deadline: '' }),
+                          {
+                            optimistic: (prev) => ({
+                              ...prev,
+                              projects: prev.projects.map((p) =>
+                                p.name === activeDetail.name ? { ...p, deadline: '' } : p,
+                              ),
+                            }),
+                          },
+                        )
+                      }}
+                    >
+                      清除
+                    </button>
+                  )}
+                </>
+              ) : (
+                <button
+                  type="button"
+                  className={`lw-chip-btn ${isOverdue ? 'overdue' : ''}`}
+                  disabled={activeDetail.archived}
+                  onClick={() => setEditingDateField('deadline')}
+                >
+                  {activeDetail.deadline
+                    ? `截止 ${formatShortDate(activeDetail.deadline)}`
+                    : '+ 截止日期'}
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Inline Editable Goal */}
+          {!activeDetail.archived ? (
+            <textarea
+              ref={goalRef}
+              className="lw-goal-edit"
+              rows={1}
+              value={goalDraft ?? activeDetail.goal}
+              onChange={(e) => setGoalDraft(e.target.value)}
+              onBlur={() => {
+                if (goalDraft !== null && goalDraft.trim() !== activeDetail.goal.trim()) {
+                  const nextGoal = goalDraft.trim()
+                  setGoalDraft(null)
+                  void onRunAction(
+                    () => api.updateProjectMeta(activeDetail.name, { goal: nextGoal }),
+                    {
+                      optimistic: (prev) => ({
+                        ...prev,
+                        projects: prev.projects.map((p) =>
+                          p.name === activeDetail.name ? { ...p, goal: nextGoal } : p,
+                        ),
+                      }),
+                    },
+                  )
+                } else {
+                  setGoalDraft(null)
+                }
+              }}
+              placeholder="写一句可检验的项目目标…"
+            />
+          ) : activeDetail.goal ? (
+            <div style={{ fontSize: 14, color: 'var(--lw-text-2)' }}>{activeDetail.goal}</div>
+          ) : null}
+        </div>
+
+        {/* Clean Inner Tabs: 计划 · 资料 · 产出 · 近期记录 */}
+        <div className="lw-tabs-bar">
+          <div className="lw-subtabs">
+            {(
+              [
+                ['plan', '计划'],
+                ['resources', '资料'],
+                ['outputs', '产出'],
+                ['history', '近期记录'],
+              ] as Array<[DetailTab, string]>
+            ).map(([k, label]) => (
+              <button
+                key={k}
+                type="button"
+                className={`lw-subtab ${detailTab === k ? 'active' : ''}`}
+                onClick={() => setDetailTab(k)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {(detailTab === 'resources' || detailTab === 'outputs') && (
+            <div className="lw-tabs-bar-right">
+              <button
+                type="button"
+                className="lw-btn lw-btn-sm lw-btn-ghost"
+                onClick={() =>
+                  onOpenFile(
+                    detailTab === 'resources'
+                      ? activeDetail.resourcesRelPath
+                      : activeDetail.outputsRelPath,
+                  )
+                }
+              >
+                编辑原文
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Detail Tab Body */}
+        {detailTab === 'plan' ? (
+          <div className="lw-list">
+            {activeDetail.plan.map((item) => (
+              <div key={item.lineIndex} className="lw-item-row" style={{ alignItems: 'center' }}>
+                <button
+                  type="button"
+                  className={`lw-check ${item.checked ? 'checked' : ''}`}
+                  style={{ marginTop: 0 }}
+                  disabled={activeDetail.archived}
+                  onClick={() => void handleTogglePlan(activeDetail, item.lineIndex)}
+                >
+                  {item.checked && <IconCheck />}
+                </button>
+                <span className={`lw-item-title ${item.checked ? 'lw-item-done' : ''}`}>
+                  {stripLeadingNumber(item.text)}
+                </span>
+                {!activeDetail.archived && !item.checked && (
+                  <div className="lw-hover-actions">
+                    <button
+                      type="button"
+                      className="lw-btn lw-btn-sm lw-btn-ghost"
+                      title="把这一步加入今日任务"
+                      onClick={() => void handlePushPlanToToday(activeDetail, item.text)}
+                    >
+                      → 今日
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {!activeDetail.archived && (
+              <form
+                className="lw-item-row"
+                style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  void handleAddPlan(activeDetail)
+                }}
+              >
+                <span className="lw-bullet-slot">
+                  <IconPlus size={14} />
+                </span>
+                <input
+                  className="lw-inline-input"
+                  style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+                  value={newPlanText}
+                  onChange={(e) => setNewPlanText(e.target.value)}
+                  placeholder="添加计划"
+                />
+              </form>
+            )}
+          </div>
+        ) : detailTab === 'resources' || detailTab === 'outputs' ? (
+          inlineDocLoading ? (
+            <div className="lw-muted">读取中…</div>
+          ) : inlineDoc && inlineDoc.content.trim() ? (
+            <MarkdownView content={inlineDoc.content} baseRelPath={inlineDoc.path} />
+          ) : (
+            <div className="lw-empty">暂无记录，点右上角「编辑原文」添加。</div>
+          )
+        ) : (
+          <div className="lw-stack" style={{ gap: 20 }}>
+            <div>
+              <div className="lw-muted" style={{ marginBottom: 8 }}>
+                最近任务
+              </div>
+              {activeDetail.taskFiles.length === 0 ? (
+                <div className="lw-muted">暂无每日任务记录</div>
+              ) : (
+                <div className="lw-list">
+                  {activeDetail.taskFiles.map((tf) => (
+                    <div
+                      key={tf.relPath}
+                      className="lw-project-row"
+                      style={{ padding: '10px 12px' }}
+                      onClick={() => onOpenFile(tf.relPath)}
+                    >
+                      <span className="lw-mono" style={{ fontSize: 13.5 }}>
+                        {tf.date}
+                      </span>
+                      <div className="lw-row" style={{ gap: 10 }}>
+                        <span className="lw-muted">
+                          {tf.doneCount}/{tf.totalCount}
+                        </span>
+                        {tf.totalMinutes > 0 && (
+                          <span className="lw-muted">{tf.totalMinutes} min</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {activeDetail.reviewFiles.length > 0 && (
+              <div>
+                <div className="lw-muted" style={{ marginBottom: 8 }}>
+                  周复盘
+                </div>
+                <div className="lw-list">
+                  {activeDetail.reviewFiles.map((rf) => (
+                    <div
+                      key={rf.relPath}
+                      className="lw-project-row"
+                      style={{ padding: '10px 12px' }}
+                      onClick={() => onOpenFile(rf.relPath)}
+                    >
+                      <span className="lw-mono" style={{ fontSize: 13.5 }}>
+                        {rf.week}
+                      </span>
+                      <span className="lw-muted">
+                        {rf.status === 'final' ? '已定稿' : '草稿'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    )
   }
 
+  // ==================== PROJECT LIST VIEW ====================
   return (
     <div className="lw-canvas">
-      {/* Clean Underline Tabs + Single Action */}
-      <div className="lw-between" style={{ alignItems: 'flex-end' }}>
-        <div className="lw-subtabs" style={{ flex: 1 }}>
+      {/* Continuous Underline Tabs + Primary Button */}
+      <div className="lw-tabs-bar">
+        <div className="lw-subtabs">
           {(
             [
-              ['doing', '进行中', doingList.length],
-              ['ideas', '想法', snapshot.ideas.length],
-              ['todo', '未开始', todoList.length],
-              ['pause', '暂停', pauseList.length],
-              ['archived', '归档', snapshot.archivedProjects.length],
-            ] as Array<[LifeCycleTab, string, number]>
-          ).map(([key, label, count]) => (
+              ['doing', '进行中'],
+              ['todo', '未开始'],
+              ['pause', '暂停'],
+              ['ideas', '想法'],
+              ['archived', '归档'],
+            ] as Array<[LifeCycleTab, string]>
+          ).map(([key, label]) => (
             <button
               key={key}
               type="button"
               className={`lw-subtab ${subTab === key ? 'active' : ''}`}
-              onClick={() => setSubTab(key)}
+              onClick={() => {
+                setSubTab(key)
+                setAreaFilter('ALL')
+              }}
             >
               {label}
-              {count > 0 && <span className="lw-muted">{count}</span>}
             </button>
           ))}
         </div>
 
-        <button
-          type="button"
-          className="lw-btn lw-btn-sm lw-btn-primary"
-          onClick={() => {
-            if (subTab === 'ideas') {
-              setShowNewIdea(true)
-            } else {
-              setProjArea(snapshot.areas[0] ?? '个人')
-              setProjCreated(localTodayIso())
-              setProjDeadline('')
-              setShowNewProject(true)
-            }
-          }}
-        >
-          <IconPlus size={13} />
-          {subTab === 'ideas' ? '记想法' : '新建项目'}
-        </button>
+        <div className="lw-tabs-bar-right">
+          <button
+            type="button"
+            className="lw-btn lw-btn-sm lw-btn-primary"
+            onClick={() => {
+              if (subTab === 'ideas') {
+                setShowNewIdea(true)
+              } else {
+                setProjArea(snapshot.areas[0] ?? '个人')
+                setProjDeadline('')
+                setShowNewProject(true)
+              }
+            }}
+          >
+            <IconPlus size={13} />
+            {subTab === 'ideas' ? '记想法' : '新建项目'}
+          </button>
+        </div>
       </div>
+
+      {/* Quiet Area Filter (only when >= 2 areas exist in current list) */}
+      {subTab !== 'ideas' && tabAreas.length >= 2 && (
+        <div className="lw-row" style={{ gap: 6, marginTop: -8 }}>
+          <button
+            type="button"
+            className={`lw-mode-tab ${areaFilter === 'ALL' ? 'active' : ''}`}
+            onClick={() => setAreaFilter('ALL')}
+          >
+            全部
+          </button>
+          {tabAreas.map((a) => (
+            <button
+              key={a}
+              type="button"
+              className={`lw-mode-tab ${areaFilter === a ? 'active' : ''}`}
+              onClick={() => setAreaFilter(a)}
+            >
+              {a}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Ideas List */}
       {subTab === 'ideas' ? (
@@ -281,12 +937,24 @@ export function ProjectsView({
                 onClick={() => onOpenFile(idea.relPath)}
               >
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14.5 }}>{idea.name}</div>
+                  <div className="lw-row" style={{ gap: 9 }}>
+                    <span
+                      style={{
+                        width: 15,
+                        height: 15,
+                        borderRadius: '50%',
+                        border: '1.5px dashed var(--lw-muted)',
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ fontWeight: 600, fontSize: 14.5 }}>{idea.name}</span>
+                  </div>
                   {idea.idea && (
                     <div
                       className="lw-meta"
                       style={{
-                        marginTop: 2,
+                        marginTop: 3,
+                        paddingLeft: 24,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -296,14 +964,13 @@ export function ProjectsView({
                     </div>
                   )}
                 </div>
-                <div className="lw-row" onClick={(e) => e.stopPropagation()}>
+                <div className="lw-row lw-hover-actions" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
                     className="lw-btn lw-btn-sm lw-btn-primary"
                     onClick={() => {
                       setPromoteTarget(idea)
                       setPromoteArea(snapshot.areas[0] ?? '个人')
-                      setPromoteCreated(localTodayIso())
                       setPromoteDeadline('')
                       setPromoteGoal('')
                     }}
@@ -328,7 +995,6 @@ export function ProjectsView({
       ) : visibleProjects.length === 0 ? (
         <div className="lw-empty">当前分组下没有项目</div>
       ) : (
-        /* Clean Things 3 Project List */
         <div className="lw-list">
           {visibleProjects.map((p) => {
             const donePlan = p.plan.filter((i) => i.checked).length
@@ -340,22 +1006,15 @@ export function ProjectsView({
               p.deadline < snapshot.date
 
             return (
-              <div key={p.homepageRelPath} className="lw-project-row" onClick={() => openDetail(p)}>
+              <div
+                key={p.homepageRelPath}
+                className="lw-project-row"
+                onClick={() => openProjectDetail(p)}
+              >
                 <div style={{ minWidth: 0, flex: 1 }}>
                   <div className="lw-row" style={{ gap: 9 }}>
                     <IconProjectPie ratio={totalPlan > 0 ? donePlan / totalPlan : 0} size={16} />
                     <span style={{ fontWeight: 600, fontSize: 14.5 }}>{p.name}</span>
-                    {p.area && <span className="lw-muted">{p.area}</span>}
-                    {p.deadline ? (
-                      <span
-                        className="lw-muted"
-                        style={isOverdue ? { color: 'var(--lw-danger)', fontWeight: 500 } : undefined}
-                      >
-                        截止 {formatShortDate(p.deadline)}
-                      </span>
-                    ) : !p.created && p.timeframe ? (
-                      <span className="lw-muted">{p.timeframe}</span>
-                    ) : null}
                   </div>
                   {(p.nextStep || p.goal) && (
                     <div
@@ -368,17 +1027,17 @@ export function ProjectsView({
                         whiteSpace: 'nowrap',
                       }}
                     >
-                      {p.nextStep || p.goal}
+                      {p.nextStep ? stripLeadingNumber(p.nextStep) : p.goal}
                     </div>
                   )}
                 </div>
 
-                <div className="lw-row" style={{ gap: 10, flexShrink: 0 }}>
+                <div className="lw-row" style={{ gap: 12, flexShrink: 0 }}>
                   {!p.archived && (
                     <div className="lw-hover-actions" onClick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
-                        className="lw-btn lw-btn-sm"
+                        className="lw-btn lw-btn-sm lw-btn-ghost"
                         onClick={() =>
                           void onRunAction(async () => {
                             await api.createTaskFile(p.name)
@@ -390,8 +1049,19 @@ export function ProjectsView({
                       </button>
                     </div>
                   )}
+                  {p.area && <span className="lw-muted">{p.area}</span>}
+                  {p.deadline ? (
+                    <span
+                      className="lw-muted"
+                      style={isOverdue ? { color: 'var(--lw-danger)', fontWeight: 500 } : undefined}
+                    >
+                      {formatShortDate(p.deadline)}
+                    </span>
+                  ) : !p.created && p.timeframe ? (
+                    <span className="lw-muted">{p.timeframe}</span>
+                  ) : null}
                   {totalPlan > 0 && (
-                    <span className="lw-muted" style={{ minWidth: 28, textAlign: 'right' }}>
+                    <span className="lw-muted" style={{ minWidth: 26, textAlign: 'right' }}>
                       {donePlan}/{totalPlan}
                     </span>
                   )}
@@ -399,268 +1069,6 @@ export function ProjectsView({
               </div>
             )
           })}
-        </div>
-      )}
-
-      {/* Smooth Project Detail Drawer */}
-      {activeDetail && (
-        <div className="lw-backdrop" onClick={() => setSelectedProjectName(null)}>
-          <div className="lw-drawer lw-drawer-sm" onClick={(e) => e.stopPropagation()}>
-            <div className="lw-panel-header">
-              <strong style={{ fontSize: 15.5 }}>{activeDetail.name}</strong>
-              <button
-                type="button"
-                className="lw-icon-btn"
-                onClick={() => setSelectedProjectName(null)}
-              >
-                <IconX />
-              </button>
-            </div>
-
-            <div className="lw-panel-body lw-stack" style={{ gap: 20 }}>
-              {!activeDetail.archived ? (
-                <div className="lw-stack" style={{ gap: 12 }}>
-                  <div className="lw-row" style={{ gap: 6 }}>
-                    {(['doing', 'todo', 'pause', 'done'] as ProjectStatus[]).map((st) => (
-                      <button
-                        key={st}
-                        type="button"
-                        className={`lw-btn lw-btn-sm ${
-                          activeDetail.status === st ? 'lw-btn-primary' : 'lw-btn-ghost'
-                        }`}
-                        onClick={() =>
-                          void onRunAction(() => api.updateProjectMeta(activeDetail.name, { status: st }), {
-                            optimistic: (prev) => ({
-                              ...prev,
-                              projects: prev.projects.map((p) =>
-                                p.name === activeDetail.name ? { ...p, status: st } : p,
-                              ),
-                            }),
-                          })
-                        }
-                      >
-                        {STATUS_LABELS[st]}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div>
-                    <label className="lw-field-label">领域</label>
-                    <select
-                      className="lw-select"
-                      value={activeDetail.area || snapshot.areas[0] || ''}
-                      onChange={(e) => {
-                        const area = e.target.value
-                        void onRunAction(() => api.updateProjectMeta(activeDetail.name, { area }), {
-                          optimistic: (prev) => ({
-                            ...prev,
-                            projects: prev.projects.map((p) =>
-                              p.name === activeDetail.name ? { ...p, area } : p,
-                            ),
-                          }),
-                        })
-                      }}
-                    >
-                      {Array.from(
-                        new Set([...snapshot.areas, ...(activeDetail.area ? [activeDetail.area] : [])]),
-                      ).map((a) => (
-                        <option key={a} value={a}>
-                          {a}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div>
-                      <label className="lw-field-label">创建日期 (created)</label>
-                      <input
-                        type="date"
-                        className="lw-input"
-                        value={activeDetail.created}
-                        onChange={(e) => updateDetailDate(activeDetail, 'created', e.target.value)}
-                      />
-                    </div>
-                    <div>
-                      <div className="lw-between" style={{ marginBottom: 5 }}>
-                        <label className="lw-field-label" style={{ margin: 0 }}>
-                          截止日期 (deadline)
-                        </label>
-                        {activeDetail.deadline && (
-                          <button
-                            type="button"
-                            className="lw-btn lw-btn-sm lw-btn-ghost"
-                            style={{ height: 18, padding: '0 4px', fontSize: 11.5 }}
-                            onClick={() => updateDetailDate(activeDetail, 'deadline', '')}
-                          >
-                            清除
-                          </button>
-                        )}
-                      </div>
-                      <input
-                        type="date"
-                        className="lw-input"
-                        value={activeDetail.deadline}
-                        onChange={(e) => updateDetailDate(activeDetail, 'deadline', e.target.value)}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <div className="lw-row">
-                  <span className="lw-tag">{STATUS_LABELS[activeDetail.status]}</span>
-                  {activeDetail.area && <span className="lw-tag">{activeDetail.area}</span>}
-                  {activeDetail.created && <span className="lw-tag">建 {activeDetail.created}</span>}
-                  {activeDetail.deadline && <span className="lw-tag">止 {activeDetail.deadline}</span>}
-                </div>
-              )}
-
-              {activeDetail.goal && (
-                <div>
-                  <div className="lw-field-label">目标</div>
-                  <div style={{ fontSize: 13.5, color: 'var(--lw-text-2)' }}>
-                    {activeDetail.goal}
-                  </div>
-                </div>
-              )}
-
-              {/* Plan checklist */}
-              <div className="lw-stack" style={{ gap: 6 }}>
-                <div className="lw-field-label">计划</div>
-                <div className="lw-list">
-                  {activeDetail.plan.map((item) => (
-                    <div key={item.lineIndex} className="lw-item-row">
-                      <button
-                        type="button"
-                        className={`lw-check ${item.checked ? 'checked' : ''}`}
-                        disabled={activeDetail.archived}
-                        onClick={() => void handleTogglePlan(activeDetail, item.lineIndex)}
-                      >
-                        {item.checked && <IconCheck />}
-                      </button>
-                      <span className={`lw-item-title ${item.checked ? 'lw-item-done' : ''}`}>
-                        {item.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                {!activeDetail.archived && (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      void handleAddPlan(activeDetail)
-                    }}
-                  >
-                    <input
-                      className="lw-inline-input"
-                      style={{ paddingLeft: 28, fontSize: 13.5 }}
-                      value={newPlanText}
-                      onChange={(e) => setNewPlanText(e.target.value)}
-                      placeholder="+ 添加计划项"
-                    />
-                  </form>
-                )}
-              </div>
-
-              {/* Files */}
-              <div className="lw-stack" style={{ gap: 6 }}>
-                <div className="lw-field-label">文件</div>
-                <div className="lw-row" style={{ gap: 6 }}>
-                  <button
-                    type="button"
-                    className="lw-btn lw-btn-sm"
-                    onClick={() => onOpenFile(activeDetail.homepageRelPath)}
-                  >
-                    <IconFile size={13} /> 主页
-                  </button>
-                  <button
-                    type="button"
-                    className="lw-btn lw-btn-sm"
-                    onClick={() => onOpenFile(activeDetail.resourcesRelPath)}
-                  >
-                    资料
-                  </button>
-                  <button
-                    type="button"
-                    className="lw-btn lw-btn-sm"
-                    onClick={() => onOpenFile(activeDetail.outputsRelPath)}
-                  >
-                    产出
-                  </button>
-                  {activeDetail.taskFiles[0] && (
-                    <button
-                      type="button"
-                      className="lw-btn lw-btn-sm"
-                      onClick={() => onOpenFile(activeDetail.taskFiles[0]!.relPath)}
-                    >
-                      最新任务
-                    </button>
-                  )}
-                  {activeDetail.latestReviewRelPath && (
-                    <button
-                      type="button"
-                      className="lw-btn lw-btn-sm"
-                      onClick={() => onOpenFile(activeDetail.latestReviewRelPath!)}
-                    >
-                      最新复盘
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="lw-panel-footer">
-              {activeDetail.archived ? (
-                <button
-                  type="button"
-                  className="lw-btn lw-btn-primary"
-                  onClick={() =>
-                    void onRunAction(
-                      async () => {
-                        await api.restoreProject(activeDetail.name)
-                        setSelectedProjectName(null)
-                      },
-                      { toast: '已恢复项目' },
-                    )
-                  }
-                >
-                  恢复项目
-                </button>
-              ) : (
-                <>
-                  <button
-                    type="button"
-                    className="lw-btn lw-btn-ghost"
-                    style={{ marginRight: 'auto' }}
-                    onClick={() =>
-                      void onRunAction(
-                        async () => {
-                          await api.archiveProject(activeDetail.name, 'done')
-                          setSelectedProjectName(null)
-                        },
-                        { toast: '已归档项目' },
-                      )
-                    }
-                  >
-                    归档
-                  </button>
-                  <button
-                    type="button"
-                    className="lw-btn lw-btn-primary"
-                    onClick={() =>
-                      void onRunAction(async () => {
-                        await api.createTaskFile(activeDetail.name)
-                        setSelectedProjectName(null)
-                        onJumpToToday()
-                      })
-                    }
-                  >
-                    今日开做
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
         </div>
       )}
 
@@ -743,32 +1151,23 @@ export function ProjectsView({
                   required
                 />
               </div>
-              <div>
-                <label className="lw-field-label">领域</label>
-                <select
-                  className="lw-select"
-                  value={projArea}
-                  onChange={(e) => setProjArea(e.target.value)}
-                >
-                  {snapshot.areas.map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label className="lw-field-label">创建日期</label>
-                  <input
-                    type="date"
-                    className="lw-input"
-                    value={projCreated}
-                    onChange={(e) => setProjCreated(e.target.value)}
-                  />
+                  <label className="lw-field-label">领域</label>
+                  <select
+                    className="lw-select"
+                    value={projArea}
+                    onChange={(e) => setProjArea(e.target.value)}
+                  >
+                    {snapshot.areas.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="lw-field-label">截止日期（可选，不填为长期）</label>
+                  <label className="lw-field-label">截止日期（可选）</label>
                   <input
                     type="date"
                     className="lw-input"
@@ -818,29 +1217,20 @@ export function ProjectsView({
               </button>
             </div>
             <div className="lw-panel-body lw-stack" style={{ gap: 12 }}>
-              <div>
-                <label className="lw-field-label">领域</label>
-                <select
-                  className="lw-select"
-                  value={promoteArea}
-                  onChange={(e) => setPromoteArea(e.target.value)}
-                >
-                  {snapshot.areas.map((a) => (
-                    <option key={a} value={a}>
-                      {a}
-                    </option>
-                  ))}
-                </select>
-              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label className="lw-field-label">创建日期</label>
-                  <input
-                    type="date"
-                    className="lw-input"
-                    value={promoteCreated}
-                    onChange={(e) => setPromoteCreated(e.target.value)}
-                  />
+                  <label className="lw-field-label">领域</label>
+                  <select
+                    className="lw-select"
+                    value={promoteArea}
+                    onChange={(e) => setPromoteArea(e.target.value)}
+                  >
+                    {snapshot.areas.map((a) => (
+                      <option key={a} value={a}>
+                        {a}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className="lw-field-label">截止日期（可选）</label>
@@ -892,7 +1282,7 @@ export function ProjectsView({
               </button>
             </div>
             <div className="lw-panel-body">
-              <label className="lw-field-label">原因（可选，将移入 99_archives）</label>
+              <label className="lw-field-label">原因（可选，将移入归档）</label>
               <textarea
                 className="lw-textarea"
                 value={cancelReason}

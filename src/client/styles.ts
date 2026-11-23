@@ -834,7 +834,9 @@ const CSS = `
 
 .lw-status-dot.todo { background: #74b3ff; }
 .lw-status-dot.doing { background: #e5484d; }
+.lw-status-dot.pause { background: #98a2b3; }
 .lw-status-dot.done { background: #2eb67d; }
+.lw-status-dot.cancel { background: #98a2b3; }
 
 .lw-menu {
   position: absolute;
@@ -1015,6 +1017,88 @@ const CSS = `
 
 .lw-prio-picker .lw-prio-btn.low {
   background: var(--lw-subtle);
+}
+
+/* Continuous underline tab bar with right action */
+.lw-tabs-bar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--lw-border);
+}
+
+.lw-tabs-bar .lw-subtabs {
+  border-bottom: none;
+}
+
+.lw-tabs-bar-right {
+  padding-bottom: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Inline project metadata strip (Things 3 calm row) */
+.lw-meta-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.lw-chip-btn {
+  appearance: none;
+  border: none;
+  background: var(--lw-subtle);
+  color: var(--lw-text-2);
+  height: 27px;
+  padding: 0 9px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+
+.lw-chip-btn:hover {
+  background: var(--lw-hover-strong);
+  color: var(--lw-text);
+}
+
+.lw-chip-btn.overdue {
+  background: var(--lw-danger-soft);
+  color: var(--lw-danger);
+}
+
+.lw-goal-edit {
+  width: calc(100% + 16px);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--lw-text-2);
+  font-size: 14px;
+  line-height: 1.65;
+  font-family: inherit;
+  padding: 5px 8px;
+  margin: 0 -8px;
+  border-radius: 8px;
+  resize: none;
+  overflow: hidden;
+  outline: none;
+  transition: background 0.14s, border-color 0.14s, box-shadow 0.14s;
+}
+
+.lw-goal-edit:hover {
+  background: var(--lw-subtle);
+}
+
+.lw-goal-edit:focus {
+  background: var(--lw-surface);
+  color: var(--lw-text);
+  box-shadow: var(--lw-shadow-focus);
 }
 
 /* Diary photos */

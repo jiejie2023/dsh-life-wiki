@@ -388,6 +388,7 @@ export function createHttpHandler(
               created: typeof body.created === 'string' ? body.created : undefined,
               deadline: typeof body.deadline === 'string' ? body.deadline : undefined,
               timeframe: typeof body.timeframe === 'string' ? body.timeframe : undefined,
+              goal: typeof body.goal === 'string' ? body.goal : undefined,
             })
             return { updated: true }
 

@@ -155,7 +155,13 @@ export const api = {
     apiPost<{ relPath: string }>('/project/restore', { projectName }),
   updateProjectMeta: (
     projectName: string,
-    patch: { status?: ProjectStatus; area?: string; created?: string; deadline?: string },
+    patch: {
+      status?: ProjectStatus
+      area?: string
+      created?: string
+      deadline?: string
+      goal?: string
+    },
   ) => apiPost<{ updated: boolean }>('/project/meta', { projectName, ...patch }),
   togglePlanItem: (projectName: string, lineIndex: number) =>
     apiPost<{ updated: boolean }>('/project/plan/toggle', { projectName, lineIndex }),

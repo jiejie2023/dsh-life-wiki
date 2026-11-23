@@ -293,10 +293,12 @@ export function parsePlanItems(lines: string[]): PlanItem[] {
     const rawLine = lines[i] ?? ''
     const match = /^-\s+\[([ xX])\]\s+(.*)$/.exec(rawLine.trim())
     if (!match) continue
+    const text = match[2]!.trim()
+    if (!text.replace(/^\d+[.、]\s*/, '').trim()) continue
     items.push({
       lineIndex: i,
       checked: match[1]!.toLowerCase() === 'x',
-      text: match[2]!.trim(),
+      text,
       rawLine,
     })
   }
