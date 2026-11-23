@@ -78,9 +78,10 @@ export function TodayView({
   const [durationOpenKey, setDurationOpenKey] = useState<string | null>(null)
   const [customMinutes, setCustomMinutes] = useState('')
   const [statusMenuProject, setStatusMenuProject] = useState<string | null>(null)
-  const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({})
-  const [noteInputs, setNoteInputs] = useState<Record<string, string>>({})
-  const [noteKinds, setNoteKinds] = useState<Record<string, 'log' | 'reflection'>>({})
+  const [expandedLog, setExpandedLog] = useState<Record<string, boolean>>({})
+  const [expandedReflection, setExpandedReflection] = useState<Record<string, boolean>>({})
+  const [logInputs, setLogInputs] = useState<Record<string, string>>({})
+  const [reflectionInputs, setReflectionInputs] = useState<Record<string, string>>({})
   const [revealedProjects, setRevealedProjects] = useState<Record<string, boolean>>({})
   const [warningsModalOpen, setWarningsModalOpen] = useState(false)
   const dateInputRef = useRef<HTMLInputElement>(null)
@@ -274,11 +275,15 @@ export function TodayView({
     })
   }
 
-  const handleAppendNote = async (group: ProjectTaskGroup) => {
-    const text = (noteInputs[group.projectName] ?? '').trim()
+  const handleAppendNote = async (group: ProjectTaskGroup, section: 'log' | 'reflection') => {
+    const raw = section === 'log' ? logInputs[group.projectName] : reflectionInputs[group.projectName]
+    const text = (raw ?? '').trim()
     if (!text) return
-    const section = noteKinds[group.projectName] ?? 'log'
-    setNoteInputs((prev) => ({ ...prev, [group.projectName]: '' }))
+    if (section === 'log') {
+      setLogInputs((prev) => ({ ...prev, [group.projectName]: '' }))
+    } else {
+      setReflectionInputs((prev) => ({ ...prev, [group.projectName]: '' }))
+    }
     await onRunAction(() => api.appendTaskEntry(group.fileRelPath, section, text), {
       optimistic: (prev) => ({
         ...prev,
@@ -425,9 +430,8 @@ export function TodayView({
       ) : (
         <div className="lw-stack" style={{ gap: 28 }}>
           {activeGroups.map((group) => {
-            const logsOpen = Boolean(expandedLogs[group.projectName])
-            const noteKind = noteKinds[group.projectName] ?? 'log'
-            const noteCount = group.logs.length + group.reflections.length
+            const logOpen = Boolean(expandedLog[group.projectName])
+            const refOpen = Boolean(expandedReflection[group.projectName])
             const curStatus: TaskFileStatus = group.status ?? 'doing'
             const curStatusLabel =
               TASK_STATUS_OPTIONS.find((o) => o.value === curStatus)?.label ?? '进行中'
@@ -446,7 +450,7 @@ export function TodayView({
                   </div>
 
                   {group.exists && (
-                    <div className="lw-row" style={{ gap: 4 }}>
+                    <div className="lw-row" style={{ gap: 2 }}>
                       {/* Linear-style Status Dropdown */}
                       <div className="lw-menu-wrap" data-status-menu>
                         <button
@@ -482,15 +486,28 @@ export function TodayView({
 
                       <button
                         type="button"
-                        className={`lw-btn lw-btn-sm ${logsOpen ? '' : 'lw-btn-ghost'}`}
+                        className={`lw-head-link ${logOpen ? 'active' : ''}`}
                         onClick={() =>
-                          setExpandedLogs((prev) => ({
+                          setExpandedLog((prev) => ({
                             ...prev,
-                            [group.projectName]: !logsOpen,
+                            [group.projectName]: !logOpen,
                           }))
                         }
                       >
-                        日志/反思{noteCount > 0 ? ` ${noteCount}` : ''}
+                        日志{group.logs.length > 0 ? ` ${group.logs.length}` : ''}
+                      </button>
+
+                      <button
+                        type="button"
+                        className={`lw-head-link ${refOpen ? 'active' : ''}`}
+                        onClick={() =>
+                          setExpandedReflection((prev) => ({
+                            ...prev,
+                            [group.projectName]: !refOpen,
+                          }))
+                        }
+                      >
+                        反思{group.reflections.length > 0 ? ` ${group.reflections.length}` : ''}
                       </button>
 
                       <button
@@ -656,82 +673,68 @@ export function TodayView({
                   </form>
                 </div>
 
-                {/* Left-aligned Log & Reflection Panel */}
-                {group.exists && logsOpen && (
-                  <div className="lw-notes-box">
-                    {(group.logs.length > 0 || group.reflections.length > 0) && (
-                      <div className="lw-stack" style={{ gap: 6 }}>
-                        {group.logs.map((l, i) => (
-                          <div key={`l-${i}`} className="lw-note-line">
-                            <span className="lw-note-tag">日志</span>
-                            <span style={{ color: 'var(--lw-text-2)' }}>
-                              {cleanDisplayBullet(l)}
-                            </span>
-                          </div>
-                        ))}
-                        {group.reflections.map((r, i) => (
-                          <div key={`r-${i}`} className="lw-note-line">
-                            <span className="lw-note-tag reflection">反思</span>
-                            <span style={{ color: 'var(--lw-text)' }}>
-                              {cleanDisplayBullet(r)}
-                            </span>
-                          </div>
-                        ))}
+                {/* Independent Borderless Log Subsection */}
+                {group.exists && logOpen && (
+                  <div className="lw-subsec">
+                    <div className="lw-subsec-title">日志</div>
+                    {group.logs.map((l, i) => (
+                      <div key={`l-${i}`} className="lw-subsec-item">
+                        {cleanDisplayBullet(l)}
                       </div>
-                    )}
-
+                    ))}
                     <form
-                      className="lw-row"
-                      style={{ gap: 10 }}
+                      className="lw-subsec-add"
                       onSubmit={(e) => {
                         e.preventDefault()
-                        void handleAppendNote(group)
+                        void handleAppendNote(group, 'log')
                       }}
                     >
-                      <div className="lw-seg" role="tablist">
-                        <button
-                          type="button"
-                          className={`lw-seg-btn ${noteKind === 'log' ? 'active' : ''}`}
-                          onClick={() =>
-                            setNoteKinds((prev) => ({ ...prev, [group.projectName]: 'log' }))
-                          }
-                        >
-                          日志
-                        </button>
-                        <button
-                          type="button"
-                          className={`lw-seg-btn ${noteKind === 'reflection' ? 'active' : ''}`}
-                          onClick={() =>
-                            setNoteKinds((prev) => ({
-                              ...prev,
-                              [group.projectName]: 'reflection',
-                            }))
-                          }
-                        >
-                          反思
-                        </button>
-                      </div>
-
+                      <IconPlus size={13} />
                       <input
                         className="lw-inline-input"
-                        style={{ flex: 1, fontSize: 13.5, padding: '2px 0' }}
-                        value={noteInputs[group.projectName] ?? ''}
+                        style={{ flex: 1, padding: '2px 0', fontSize: 13.5 }}
+                        value={logInputs[group.projectName] ?? ''}
                         onChange={(e) =>
-                          setNoteInputs((prev) => ({
+                          setLogInputs((prev) => ({
                             ...prev,
                             [group.projectName]: e.target.value,
                           }))
                         }
-                        placeholder={
-                          noteKind === 'log' ? '写一条日志，回车保存…' : '写一条反思，回车保存…'
-                        }
+                        placeholder="记一条日志"
                       />
+                    </form>
+                  </div>
+                )}
 
-                      {(noteInputs[group.projectName] ?? '').trim() && (
-                        <button type="submit" className="lw-btn lw-btn-sm lw-btn-primary">
-                          记录
-                        </button>
-                      )}
+                {/* Independent Borderless Reflection Subsection */}
+                {group.exists && refOpen && (
+                  <div className="lw-subsec reflection">
+                    <div className="lw-subsec-title">反思</div>
+                    {group.reflections.map((r, i) => (
+                      <div key={`r-${i}`} className="lw-subsec-item">
+                        {cleanDisplayBullet(r)}
+                      </div>
+                    ))}
+                    <form
+                      className="lw-subsec-add"
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void handleAppendNote(group, 'reflection')
+                      }}
+                    >
+                      <IconPlus size={13} />
+                      <input
+                        className="lw-inline-input"
+                        style={{ flex: 1, padding: '2px 0', fontSize: 13.5 }}
+                        value={reflectionInputs[group.projectName] ?? ''}
+                        onChange={(e) =>
+                          setReflectionInputs((prev) => ({
+                            ...prev,
+                            [group.projectName]: e.target.value,
+                          }))
+                        }
+                        placeholder="记一条反思"
+                      />
                     </form>
                   </div>
                 )}

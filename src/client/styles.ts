@@ -870,39 +870,6 @@ const CSS = `
   font-weight: 600;
 }
 
-/* Segmented mini switcher (Log / Reflection) */
-.lw-seg {
-  display: inline-flex;
-  align-items: center;
-  padding: 2px;
-  border-radius: 7px;
-  background: var(--lw-hover);
-  flex-shrink: 0;
-}
-
-.lw-seg-btn {
-  appearance: none;
-  border: none;
-  background: transparent;
-  color: var(--lw-muted);
-  font-size: 12px;
-  font-weight: 500;
-  padding: 3px 9px;
-  border-radius: 5px;
-  cursor: pointer;
-  transition: background 0.14s, color 0.14s;
-}
-
-.lw-seg-btn:hover {
-  color: var(--lw-text-2);
-}
-
-.lw-seg-btn.active {
-  background: var(--lw-surface);
-  color: var(--lw-text);
-  box-shadow: var(--lw-shadow-sm);
-}
-
 /* Clickable task duration chip */
 .lw-time-btn {
   appearance: none;
@@ -921,33 +888,76 @@ const CSS = `
   color: var(--lw-text);
 }
 
-.lw-notes-box {
-  padding: 12px 14px;
-  border-radius: 9px;
-  background: var(--lw-subtle);
+/* Borderless editorial subsections (Log & Reflection) */
+.lw-subsec {
+  margin-top: 6px;
+  padding: 2px 0 4px 14px;
+  border-left: 2px solid var(--lw-border-strong);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 6px;
+  animation: lwFadeIn 0.15s ease-out;
 }
 
-.lw-note-line {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  font-size: 13.5px;
-  line-height: 1.6;
+.lw-subsec.reflection {
+  border-left-color: var(--lw-accent);
 }
 
-.lw-note-tag {
-  flex: 0 0 auto;
-  font-size: 11.5px;
-  font-weight: 500;
+.lw-subsec-title {
+  font-size: 12px;
+  font-weight: 600;
   color: var(--lw-muted);
-  min-width: 28px;
+  line-height: 1.3;
 }
 
-.lw-note-tag.reflection {
+.lw-subsec.reflection .lw-subsec-title {
   color: var(--lw-accent-text);
+}
+
+.lw-subsec-item {
+  font-size: 13.5px;
+  line-height: 1.65;
+  color: var(--lw-text-2);
+  word-break: break-word;
+}
+
+.lw-subsec.reflection .lw-subsec-item {
+  color: var(--lw-text);
+}
+
+.lw-subsec-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--lw-muted);
+}
+
+.lw-head-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--lw-muted);
+  font-size: 12.5px;
+  font-weight: 500;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+}
+
+.lw-head-link:hover {
+  background: var(--lw-hover);
+  color: var(--lw-text);
+}
+
+.lw-head-link.active {
+  color: var(--lw-text);
+  font-weight: 600;
+  background: var(--lw-hover);
 }
 
 /* Diary photos */
