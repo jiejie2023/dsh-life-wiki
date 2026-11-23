@@ -10,6 +10,7 @@ import {
   IconClock,
   IconFile,
   IconPlus,
+  IconStar,
   IconX,
 } from '../components/Icons.tsx'
 
@@ -309,9 +310,12 @@ export function TodayView({
 
   return (
     <div className="lw-canvas">
-      {/* Calm Date Header */}
+      {/* Calm Date Header (Things 3 Gold Star + Date) */}
       <div className="lw-page-head">
-        <div className="lw-row" style={{ gap: 6 }}>
+        <div className="lw-row" style={{ gap: 8 }}>
+          <span style={{ color: 'var(--lw-gold)', display: 'inline-flex', alignItems: 'center' }}>
+            <IconStar size={20} />
+          </span>
           <h1
             className="lw-h1"
             style={{ cursor: 'pointer' }}

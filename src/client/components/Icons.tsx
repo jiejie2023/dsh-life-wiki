@@ -148,3 +148,63 @@ export function IconRefresh({ size = 15, className }: IconProps) {
     </svg>
   )
 }
+
+export function IconStar({ size = 20, className }: IconProps) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      className={className}
+      aria-hidden="true"
+    >
+      <path d="M12 2.4c.42 0 .8.24.98.62l2.46 5.06 5.56.78c.42.06.76.35.9.75.13.4.02.84-.29 1.13l-4.05 3.9.98 5.52c.07.42-.1.84-.44 1.09a1.08 1.08 0 0 1-1.15.08L12 18.7l-4.95 2.63a1.08 1.08 0 0 1-1.15-.08 1.08 1.08 0 0 1-.44-1.09l.98-5.52-4.05-3.9a1.08 1.08 0 0 1-.29-1.13c.14-.4.48-.69.9-.75l5.56-.78 2.46-5.06c.18-.38.56-.62.98-.62z" />
+    </svg>
+  )
+}
+
+export function IconProjectPie({
+  ratio,
+  size = 16,
+}: {
+  ratio: number
+  size?: number
+}) {
+  const clamped = Math.max(0, Math.min(1, ratio))
+  const r = 6.2
+  const cx = 10
+  const cy = 10
+  const angle = clamped * 2 * Math.PI - Math.PI / 2
+  const x = cx + r * Math.cos(angle)
+  const y = cy + r * Math.sin(angle)
+  const largeArc = clamped > 0.5 ? 1 : 0
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      style={{ flexShrink: 0 }}
+      aria-hidden="true"
+    >
+      <circle
+        cx={cx}
+        cy={cy}
+        r={8}
+        stroke="var(--lw-accent)"
+        strokeWidth="1.5"
+        opacity={clamped === 0 ? 0.55 : 0.9}
+      />
+      {clamped >= 0.999 ? (
+        <circle cx={cx} cy={cy} r={r} fill="var(--lw-accent)" />
+      ) : clamped > 0 ? (
+        <path
+          d={`M ${cx} ${cy} L ${cx} ${cy - r} A ${r} ${r} 0 ${largeArc} 1 ${x.toFixed(2)} ${y.toFixed(2)} Z`}
+          fill="var(--lw-accent)"
+        />
+      ) : null}
+    </svg>
+  )
+}

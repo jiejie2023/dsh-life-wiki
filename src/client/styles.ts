@@ -20,26 +20,28 @@ const CSS = `
 }
 
 .lw-root {
-  --lw-bg: #fcfcfb;
+  --lw-bg: #ffffff;
   --lw-surface: #ffffff;
-  --lw-subtle: #f4f4f2;
-  --lw-hover: rgba(24, 24, 27, 0.045);
-  --lw-hover-strong: rgba(24, 24, 27, 0.08);
-  --lw-border: rgba(24, 24, 27, 0.085);
-  --lw-border-strong: rgba(24, 24, 27, 0.16);
-  --lw-text: #18181b;
-  --lw-text-2: #52525b;
-  --lw-muted: #9898a0;
-  --lw-accent: #1f6a52;
-  --lw-accent-hover: #185743;
-  --lw-accent-soft: rgba(31, 106, 82, 0.09);
-  --lw-accent-text: #1a5c47;
-  --lw-warn: #b46917;
-  --lw-warn-soft: rgba(180, 105, 23, 0.1);
-  --lw-danger: #c43b3b;
-  --lw-danger-soft: rgba(196, 59, 59, 0.1);
-  --lw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
-  --lw-shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.14), 0 0 0 1px var(--lw-border);
+  --lw-subtle: #f5f7fa;
+  --lw-hover: #f2f6fc;
+  --lw-hover-strong: #e8f0fc;
+  --lw-border: #eceff4;
+  --lw-border-strong: #d4dce7;
+  --lw-text: #1d222b;
+  --lw-text-2: #5b6577;
+  --lw-muted: #98a2b3;
+  --lw-accent: #2678f6;
+  --lw-accent-hover: #1a66de;
+  --lw-accent-soft: rgba(38, 120, 246, 0.11);
+  --lw-accent-text: #1a62d6;
+  --lw-gold: #f2b705;
+  --lw-warn: #d98a00;
+  --lw-warn-soft: rgba(217, 138, 0, 0.12);
+  --lw-danger: #d94343;
+  --lw-danger-soft: rgba(217, 67, 67, 0.11);
+  --lw-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.05);
+  --lw-shadow-focus: 0 5px 20px rgba(15, 23, 42, 0.07), 0 0 0 1px rgba(38, 120, 246, 0.24);
+  --lw-shadow-lg: 0 16px 44px rgba(15, 23, 42, 0.13), 0 0 0 1px rgba(15, 23, 42, 0.06);
   --lw-ease: cubic-bezier(0.16, 1, 0.3, 1);
 
   box-sizing: border-box;
@@ -51,7 +53,7 @@ const CSS = `
   flex-direction: column;
   background: var(--lw-bg);
   color: var(--lw-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
   font-size: 14px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
@@ -60,26 +62,28 @@ const CSS = `
 
 .lw-root[data-lw-theme="dark"] {
   color-scheme: dark;
-  --lw-bg: #131314;
-  --lw-surface: #1a1a1c;
-  --lw-subtle: #202023;
-  --lw-hover: rgba(255, 255, 255, 0.055);
-  --lw-hover-strong: rgba(255, 255, 255, 0.1);
-  --lw-border: rgba(255, 255, 255, 0.085);
+  --lw-bg: #1b1f26;
+  --lw-surface: #222731;
+  --lw-subtle: #252b36;
+  --lw-hover: rgba(76, 146, 255, 0.1);
+  --lw-hover-strong: rgba(76, 146, 255, 0.18);
+  --lw-border: rgba(255, 255, 255, 0.08);
   --lw-border-strong: rgba(255, 255, 255, 0.16);
-  --lw-text: #f1f1f3;
-  --lw-text-2: #a5a5ae;
-  --lw-muted: #6e6e77;
-  --lw-accent: #45a887;
-  --lw-accent-hover: #56ba99;
-  --lw-accent-soft: rgba(69, 168, 135, 0.14);
-  --lw-accent-text: #7cd0b3;
-  --lw-warn: #e09f4e;
-  --lw-warn-soft: rgba(224, 159, 78, 0.14);
-  --lw-danger: #e26d6d;
-  --lw-danger-soft: rgba(226, 109, 109, 0.14);
-  --lw-shadow-sm: none;
-  --lw-shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--lw-border);
+  --lw-text: #eef1f6;
+  --lw-text-2: #9ba5b7;
+  --lw-muted: #687387;
+  --lw-accent: #4c92ff;
+  --lw-accent-hover: #64a2ff;
+  --lw-accent-soft: rgba(76, 146, 255, 0.16);
+  --lw-accent-text: #82b5ff;
+  --lw-gold: #f5c23b;
+  --lw-warn: #f0ab3a;
+  --lw-warn-soft: rgba(240, 171, 58, 0.16);
+  --lw-danger: #eb6a6a;
+  --lw-danger-soft: rgba(235, 106, 106, 0.16);
+  --lw-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.22);
+  --lw-shadow-focus: 0 6px 24px rgba(0, 0, 0, 0.32), 0 0 0 1px rgba(76, 146, 255, 0.35);
+  --lw-shadow-lg: 0 22px 54px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
 .lw-root *, .lw-root *::before, .lw-root *::after {
@@ -167,7 +171,7 @@ const CSS = `
 }
 
 .lw-nav-item.active {
-  color: var(--lw-text);
+  color: var(--lw-accent-text);
   font-weight: 600;
 }
 
@@ -179,7 +183,7 @@ const CSS = `
   bottom: 0;
   height: 2px;
   border-radius: 2px 2px 0 0;
-  background: var(--lw-text);
+  background: var(--lw-accent);
 }
 
 .lw-header-right {
@@ -269,14 +273,16 @@ const CSS = `
 }
 
 .lw-btn-primary {
-  background: var(--lw-text);
-  border-color: var(--lw-text);
-  color: var(--lw-bg);
+  background: var(--lw-accent);
+  border-color: var(--lw-accent);
+  color: #ffffff;
+  box-shadow: 0 1px 2px rgba(38, 120, 246, 0.24);
 }
 
 .lw-btn-primary:hover:not(:disabled) {
-  opacity: 0.88;
-  background: var(--lw-text);
+  background: var(--lw-accent-hover);
+  border-color: var(--lw-accent-hover);
+  opacity: 1;
 }
 
 .lw-btn-accent {
@@ -482,7 +488,7 @@ const CSS = `
 }
 
 .lw-subtab.active {
-  color: var(--lw-text);
+  color: var(--lw-accent-text);
   font-weight: 600;
 }
 
@@ -492,8 +498,9 @@ const CSS = `
   left: 0;
   right: 0;
   bottom: -1px;
-  height: 1.5px;
-  background: var(--lw-text);
+  height: 2px;
+  border-radius: 2px;
+  background: var(--lw-accent);
 }
 
 /* Custom silky checkbox */
@@ -626,21 +633,21 @@ const CSS = `
   color: var(--lw-warn);
 }
 
-/* Subtle quick box (diary capture, search) */
+/* Subtle quick box (diary capture, search) — Things 3 soft elevation on focus */
 .lw-capture {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  border-radius: 9px;
+  padding: 9px 14px;
+  border-radius: 10px;
   background: var(--lw-subtle);
   border: 1px solid transparent;
-  transition: background 0.15s, border-color 0.15s;
+  transition: background 0.18s var(--lw-ease), box-shadow 0.18s var(--lw-ease), border-color 0.18s;
 }
 
 .lw-capture:focus-within {
   background: var(--lw-surface);
-  border-color: var(--lw-border-strong);
+  box-shadow: var(--lw-shadow-focus);
 }
 
 /* Editorial card (used sparingly) */
@@ -916,9 +923,9 @@ const CSS = `
 }
 
 .lw-mode-tab.active {
-  color: var(--lw-text);
+  color: var(--lw-accent-text);
   font-weight: 600;
-  background: var(--lw-hover-strong);
+  background: var(--lw-accent-soft);
 }
 
 .lw-bullet-slot {
@@ -1097,10 +1104,14 @@ export function ensureStyles(): void {
   if (typeof document === 'undefined') return
   const old = document.getElementById('dsh-life-wiki-styles')
   if (old) old.remove()
-  if (document.getElementById(STYLE_ID)) return
-  const style = document.createElement('style')
-  style.id = STYLE_ID
-  style.setAttribute('data-plugin', 'dsh-life-wiki')
-  style.textContent = CSS
-  document.head.appendChild(style)
+  let style = document.getElementById(STYLE_ID) as HTMLStyleElement | null
+  if (!style) {
+    style = document.createElement('style')
+    style.id = STYLE_ID
+    style.setAttribute('data-plugin', 'dsh-life-wiki')
+    document.head.appendChild(style)
+  }
+  if (style.textContent !== CSS) {
+    style.textContent = CSS
+  }
 }

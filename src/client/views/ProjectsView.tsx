@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import type { BoardSnapshot, IdeaSummary, ProjectCard, ProjectStatus } from '../../shared/types.ts'
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
-import { IconCheck, IconFile, IconPlus, IconX } from '../components/Icons.tsx'
+import { IconCheck, IconFile, IconPlus, IconProjectPie, IconX } from '../components/Icons.tsx'
 
 type LifeCycleTab = 'doing' | 'ideas' | 'todo' | 'pause' | 'archived'
 
@@ -304,7 +304,8 @@ export function ProjectsView({
             return (
               <div key={p.homepageRelPath} className="lw-project-row" onClick={() => openDetail(p)}>
                 <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="lw-row" style={{ gap: 8 }}>
+                  <div className="lw-row" style={{ gap: 9 }}>
+                    <IconProjectPie ratio={totalPlan > 0 ? donePlan / totalPlan : 0} size={16} />
                     <span style={{ fontWeight: 600, fontSize: 14.5 }}>{p.name}</span>
                     {p.area && <span className="lw-muted">{p.area}</span>}
                     {p.timeframe && <span className="lw-muted">{p.timeframe}</span>}
@@ -317,6 +318,7 @@ export function ProjectsView({
                       className="lw-meta"
                       style={{
                         marginTop: 3,
+                        paddingLeft: 25,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
