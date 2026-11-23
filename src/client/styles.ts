@@ -832,9 +832,9 @@ const CSS = `
   flex-shrink: 0;
 }
 
-.lw-status-dot.todo { background: var(--lw-muted); }
-.lw-status-dot.doing { background: var(--lw-warn); }
-.lw-status-dot.done { background: var(--lw-accent); }
+.lw-status-dot.todo { background: #74b3ff; }
+.lw-status-dot.doing { background: #e5484d; }
+.lw-status-dot.done { background: #2eb67d; }
 
 .lw-menu {
   position: absolute;
