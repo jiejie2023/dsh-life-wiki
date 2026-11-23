@@ -15,7 +15,7 @@ export function KnowledgeView({
   onOpenFile,
   onRunAction,
 }: KnowledgeViewProps) {
-  const [subTab, setSubTab] = useState<'wiki' | 'raw'>('wiki')
+  const [subTab, setSubTab] = useState<'raw' | 'wiki'>('raw')
   const [query, setQuery] = useState('')
   const [rawCategory, setRawCategory] = useState('ALL')
 
@@ -90,17 +90,17 @@ export function KnowledgeView({
         <div className="lw-subtabs">
           <button
             type="button"
+            className={`lw-subtab ${subTab === 'raw' ? 'active' : ''}`}
+            onClick={() => setSubTab('raw')}
+          >
+            Raw
+          </button>
+          <button
+            type="button"
             className={`lw-subtab ${subTab === 'wiki' ? 'active' : ''}`}
             onClick={() => setSubTab('wiki')}
           >
             Wiki
-          </button>
-          <button
-            type="button"
-            className={`lw-subtab ${subTab === 'raw' ? 'active' : ''}`}
-            onClick={() => setSubTab('raw')}
-          >
-            原件库
           </button>
         </div>
 
