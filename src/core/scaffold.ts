@@ -103,9 +103,9 @@ function buildSchemaMd(): string {
 
 - \`inbox.md\`：暂存随手记下的灵感与待分流事项。
 - \`projects/\`：项目目录；主页记录一件事从想法到总结的全过程，同级放四个留档子目录：
-  - \`01_tasks/YYYY-MM-DD.md\`：当天任务（\`- [ ]\` / \`- [x]\` 与实际用时）、日志（重要决定以“决定：”开头）、反思。
+  - \`01_tasks/YYYY-MM-DD.md\`：当天任务（\`- [ ] [高/中/低] 事情（N min）\`）、日志（重要决定以“决定：”开头）、反思。
   - \`02_resources/resources.md\`：本项目用到的规范、依据与参考资料登记。
-  - \`03_reviews/YYYY-Www.md\`：周复盘（本周 / 原因 / 经验 / 下周），确认后 \`status\` 从 \`draft\` 改为 \`final\`。
+  - \`03_reviews/YYYY-Www.md\`：周复盘（本周 / 原因 / 经验 / 下周），审核后 \`status\` 从 \`draft\`（待审核）改为 \`final\`（已审核）。
   - \`04_outputs/outputs.md\`：对外交付成品登记。
 - \`projects/00_ideas/\`：还没决定做不做的想法，一个想法一个 \`.md\`。
 - \`projects/99_archives/\`：已完成（\`done\`）、决定不做（\`cancel\`）或长期暂停的项目归档。
@@ -195,8 +195,6 @@ status: draft
 ## 经验
 
 ## 下周
-
-1. 
 `,
     'system/templates/project/04_outputs/outputs.md': `# 交付物登记
 

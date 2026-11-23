@@ -575,8 +575,6 @@ export function createLifeWikiEngine(
           '',
           '## 下周',
           '',
-          '1. ',
-          '',
         ].join('\n'),
       )
     }
