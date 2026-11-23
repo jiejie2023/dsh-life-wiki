@@ -14,7 +14,7 @@ import {
 import { MarkdownView } from '../components/MarkdownView.tsx'
 
 type LifeCycleTab = 'doing' | 'todo' | 'pause' | 'ideas' | 'archived'
-type DetailTab = 'plan' | 'resources' | 'outputs' | 'history'
+type DetailTab = 'plan' | 'tasks' | 'resources' | 'reviews' | 'outputs'
 
 interface ProjectsViewProps {
   snapshot: BoardSnapshot
@@ -686,21 +686,23 @@ export function ProjectsView({
           ) : null}
         </div>
 
-        {/* Clean Inner Tabs: 计划 · 资料 · 产出 · 近期记录 */}
+        {/* Clean Inner Tabs aligned 1:1 with local 5-piece structure */}
         <div className="lw-tabs-bar">
           <div className="lw-subtabs">
             {(
               [
-                ['plan', '计划'],
-                ['resources', '资料'],
-                ['outputs', '产出'],
-                ['history', '近期记录'],
-              ] as Array<[DetailTab, string]>
-            ).map(([k, label]) => (
+                ['plan', 'Plan', `${activeDetail.name}.md · ## 计划`],
+                ['tasks', 'Tasks', '01_tasks/'],
+                ['resources', 'Resources', '02_resources/resources.md'],
+                ['reviews', 'Reviews', '03_reviews/'],
+                ['outputs', 'Outputs', '04_outputs/outputs.md'],
+              ] as Array<[DetailTab, string, string]>
+            ).map(([k, label, tip]) => (
               <button
                 key={k}
                 type="button"
                 className={`lw-subtab ${detailTab === k ? 'active' : ''}`}
+                title={tip}
                 onClick={() => setDetailTab(k)}
               >
                 {label}
@@ -721,6 +723,25 @@ export function ProjectsView({
                 }
               >
                 编辑原文
+              </button>
+            </div>
+          )}
+          {detailTab === 'reviews' && !activeDetail.archived && (
+            <div className="lw-tabs-bar-right">
+              <button
+                type="button"
+                className="lw-btn lw-btn-sm lw-btn-ghost"
+                onClick={() =>
+                  void onRunAction(
+                    async () => {
+                      const res = await api.generateWeeklyReview(activeDetail.name, snapshot.week)
+                      onOpenFile(res.relPath)
+                    },
+                    { toast: '已生成本周复盘草稿' },
+                  )
+                }
+              >
+                生成本周草稿
               </button>
             </div>
           )}
@@ -780,6 +801,36 @@ export function ProjectsView({
               </form>
             )}
           </div>
+        ) : detailTab === 'tasks' ? (
+          activeDetail.taskFiles.length === 0 ? (
+            <div className="lw-empty">暂无任务记录，点右上角「今日开做」开始。</div>
+          ) : (
+            <div className="lw-list">
+              {activeDetail.taskFiles.map((tf) => (
+                <div
+                  key={tf.relPath}
+                  className="lw-project-row"
+                  style={{ padding: '11px 12px' }}
+                  onClick={() => onOpenFile(tf.relPath)}
+                >
+                  <div className="lw-row" style={{ gap: 9 }}>
+                    <span className={`lw-status-dot ${tf.status ?? 'todo'}`} />
+                    <span className="lw-mono" style={{ fontSize: 13.5 }}>
+                      {tf.date}
+                    </span>
+                  </div>
+                  <div className="lw-row" style={{ gap: 12 }}>
+                    <span className="lw-muted">
+                      {tf.doneCount}/{tf.totalCount}
+                    </span>
+                    {tf.totalMinutes > 0 && (
+                      <span className="lw-muted">{tf.totalMinutes} min</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
         ) : detailTab === 'resources' || detailTab === 'outputs' ? (
           inlineDocLoading ? (
             <div className="lw-muted">读取中…</div>
@@ -788,64 +839,26 @@ export function ProjectsView({
           ) : (
             <div className="lw-empty">暂无记录，点右上角「编辑原文」添加。</div>
           )
+        ) : activeDetail.reviewFiles.length === 0 ? (
+          <div className="lw-empty">暂无周复盘，点右上角「生成本周草稿」自动汇总本周任务。</div>
         ) : (
-          <div className="lw-stack" style={{ gap: 20 }}>
-            <div>
-              <div className="lw-muted" style={{ marginBottom: 8 }}>
-                最近任务
+          <div className="lw-list">
+            {activeDetail.reviewFiles.map((rf) => (
+              <div
+                key={rf.relPath}
+                className="lw-project-row"
+                style={{ padding: '11px 12px' }}
+                onClick={() => onOpenFile(rf.relPath)}
+              >
+                <div className="lw-row" style={{ gap: 12 }}>
+                  <span className="lw-mono" style={{ fontSize: 13.5, fontWeight: 500 }}>
+                    {rf.week}
+                  </span>
+                  {rf.totalHoursText && <span className="lw-muted">{rf.totalHoursText}</span>}
+                </div>
+                <span className="lw-muted">{rf.status === 'final' ? '已定稿' : '草稿'}</span>
               </div>
-              {activeDetail.taskFiles.length === 0 ? (
-                <div className="lw-muted">暂无每日任务记录</div>
-              ) : (
-                <div className="lw-list">
-                  {activeDetail.taskFiles.map((tf) => (
-                    <div
-                      key={tf.relPath}
-                      className="lw-project-row"
-                      style={{ padding: '10px 12px' }}
-                      onClick={() => onOpenFile(tf.relPath)}
-                    >
-                      <span className="lw-mono" style={{ fontSize: 13.5 }}>
-                        {tf.date}
-                      </span>
-                      <div className="lw-row" style={{ gap: 10 }}>
-                        <span className="lw-muted">
-                          {tf.doneCount}/{tf.totalCount}
-                        </span>
-                        {tf.totalMinutes > 0 && (
-                          <span className="lw-muted">{tf.totalMinutes} min</span>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {activeDetail.reviewFiles.length > 0 && (
-              <div>
-                <div className="lw-muted" style={{ marginBottom: 8 }}>
-                  周复盘
-                </div>
-                <div className="lw-list">
-                  {activeDetail.reviewFiles.map((rf) => (
-                    <div
-                      key={rf.relPath}
-                      className="lw-project-row"
-                      style={{ padding: '10px 12px' }}
-                      onClick={() => onOpenFile(rf.relPath)}
-                    >
-                      <span className="lw-mono" style={{ fontSize: 13.5 }}>
-                        {rf.week}
-                      </span>
-                      <span className="lw-muted">
-                        {rf.status === 'final' ? '已定稿' : '草稿'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            ))}
           </div>
         )}
       </div>
