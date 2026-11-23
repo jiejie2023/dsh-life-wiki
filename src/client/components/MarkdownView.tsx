@@ -29,11 +29,16 @@ function resolveRelativeAsset(baseRelPath: string | undefined, target: string): 
   return rawFileUrl(segments.join('/'))
 }
 
+function stripLegacyHtmlTags(text: string): string {
+  return text.replace(/<\/?font\b[^>]*>/gi, '')
+}
+
 function renderInline(
-  text: string,
+  rawText: string,
   baseRelPath: string | undefined,
   onOpenImage?: (src: string) => void,
 ): React.ReactNode[] {
+  const text = stripLegacyHtmlTags(rawText)
   const nodes: React.ReactNode[] = []
   const tokenRe =
     /!\[([^\]]*)\]\(([^)]+)\)|\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|\*([^*]+)\*/g
@@ -148,14 +153,22 @@ export function MarkdownView({
     if (trimmed.startsWith('>')) {
       const qLines: string[] = []
       while (i < lines.length && lines[i]!.trim().startsWith('>')) {
-        qLines.push(lines[i]!.trim().replace(/^>\s?/, ''))
+        let ql = lines[i]!.trim().replace(/^>\s?/, '')
+        ql = ql.replace(/^\[![a-zA-Z0-9_-]+\][+-]?\s*/, '')
+        qLines.push(ql)
         i += 1
       }
       blocks.push(
         <blockquote key={`q-${blockKey++}`}>
-          {qLines.map((ql, idx) => (
-            <div key={idx}>{renderInline(ql, baseRelPath, onOpenImage)}</div>
-          ))}
+          {qLines.map((ql, idx) =>
+            idx === 0 && ql.trim() ? (
+              <div key={idx} style={{ fontWeight: 500, color: 'var(--lw-text)' }}>
+                {renderInline(ql, baseRelPath, onOpenImage)}
+              </div>
+            ) : (
+              <div key={idx}>{renderInline(ql, baseRelPath, onOpenImage)}</div>
+            ),
+          )}
         </blockquote>,
       )
       continue

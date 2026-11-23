@@ -467,7 +467,7 @@ export function LifeWikiApp() {
             <DiaryView
               snapshot={snapshot}
               defaultDate={selectedDate}
-              onOpenFile={(rel) => setDrawerFile({ path: rel })}
+              onOpenFile={(rel, opts) => setDrawerFile({ path: rel, edit: opts?.edit })}
               onRunAction={runAction}
             />
           )}
