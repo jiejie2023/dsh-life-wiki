@@ -35,7 +35,7 @@ describe('LifeWiki Onboarding & Sample Cleanup (Seam 1A)', () => {
       const engine = createLifeWikiEngine(dir, { now: () => now })
       let snap = await engine.getSnapshot('2026-11-24')
       assert.equal(snap.hasSampleData, true)
-      assert.equal(snap.projects.length, 2)
+      assert.equal(snap.projects.length, 1)
       assert.equal(snap.ideas.length, 1)
       assert.equal(snap.knowledge.wikiPages.length, 1)
       assert.equal(snap.knowledge.rawEntries.length, 1)

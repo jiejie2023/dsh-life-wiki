@@ -1,8 +1,16 @@
 {
   "name": "dsh-life-wiki",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "description": "Life Wiki（人生知识库）— 本地优先的 Markdown 个人项目、日记、复盘与知识库 DSH 插件",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jiejie2023/dsh-life-wiki.git"
+  },
+  "homepage": "https://github.com/jiejie2023/dsh-life-wiki#readme",
+  "bugs": {
+    "url": "https://github.com/jiejie2023/dsh-life-wiki/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.0.0",
@@ -19,7 +27,8 @@
     "lib/index.js",
     "lib/client.js",
     "cordis.patch.yml",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "keywords": [
     "deepseek-harness",

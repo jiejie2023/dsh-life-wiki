@@ -76,7 +76,7 @@ describe('Life Wiki Host HTTP Seam (/api/life-wiki/*)', () => {
       }
       assert.equal(snapRes.ok, true)
       assert.equal(snapRes.data.hasSampleData, true)
-      assert.equal(snapRes.data.projects.length, 2)
+      assert.equal(snapRes.data.projects.length, 1)
       assert.equal(snapRes.data.knowledge.wikiPages.length, 1)
 
       // 6. Browse directories and serve binary image via /file/raw with dsh-app:// origin

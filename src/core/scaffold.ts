@@ -304,7 +304,7 @@ export async function initializeVault(
 
   if (options.withSample) {
     const manifest: SampleManifest = {
-      projects: ['示例-搭建个人主页', '示例-每日阅读与写作'],
+      projects: ['示例-搭建个人主页'],
       ideas: ['示例-整理年度复盘清单.md'],
       wikiPages: ['如何开始使用 Life Wiki.md'],
       rawDirs: ['example-markdown-guide'],
@@ -415,81 +415,6 @@ status: draft
     await writeIfMissing(
       join(rootDir, p1, '04_outputs/outputs.md'),
       `# 交付物登记\n\n- 个人主页首版：公开访问 · ${today} · doing\n`,
-    )
-
-    // Sample Project 2
-    const p2 = 'projects/示例-每日阅读与写作'
-    await mkdir(join(rootDir, p2, '01_tasks'), { recursive: true })
-    await mkdir(join(rootDir, p2, '02_resources'), { recursive: true })
-    await mkdir(join(rootDir, p2, '03_reviews'), { recursive: true })
-    await mkdir(join(rootDir, p2, '04_outputs'), { recursive: true })
-    await writeIfMissing(
-      join(rootDir, p2, '示例-每日阅读与写作.md'),
-      `---
-status: doing
-area: 学习
-created: ${today}
-deadline: 
----
-
-## 想法
-
-每天保持 20 分钟深度阅读，并随手在日记或知识库记下一句收获。
-
-## 动机
-
-**为什么想做：** 刷碎片信息太多，静不下心读完整本书。
-**不做会怎样：** 脑子被短视频塞满，表达越来越浅。
-**要付出什么：** 每天睡前 20 分钟放下手机。
-**做完能带来什么真实变化：** 思维更沉稳，半年能攒出十几篇真正属于自己的知识页。
-
-## 认知
-
-把门槛降到极低（每天 20 分钟、哪怕写 3 句话都算），比追求宏大书单更能坚持。
-
-## 判断
-
-做：长期复利最大的日常习惯。（${yesterday}）
-
-## 目标
-
-每周至少完成 4 天深度阅读，每月整理 2 篇可复用的 \`wiki/\` 知识页。
-
-## 计划
-
-- [x] 1. 选定本月精读的第一本书
-- [ ] 2. 每天睡前阅读 20 分钟并在日记里随手记一句（${today} ~ 长期）
-- [ ] 3. 周日复盘时把本周最值钱的 1 条思考编进 \`wiki/\`
-
-## 总结
-
-**结果：** 
-**动机回看：** 
-**经验：** 
-`,
-    )
-    await writeIfMissing(
-      join(rootDir, p2, `01_tasks/${today}.md`),
-      `---
-status: todo
----
-
-## 任务
-
-- [ ] [中] 睡前精读 20 分钟并摘录 1 个核心观点
-
-## 日志
-
-## 反思
-`,
-    )
-    await writeIfMissing(
-      join(rootDir, p2, '02_resources/resources.md'),
-      `# 资料登记\n\n- [如何开始使用 Life Wiki](../../../wiki/如何开始使用 Life Wiki.md)：日常阅读与沉淀方式参考\n`,
-    )
-    await writeIfMissing(
-      join(rootDir, p2, '04_outputs/outputs.md'),
-      `# 交付物登记\n\n- 长期阅读笔记沉淀在 \`wiki/\`\n`,
     )
 
     // Sample Idea
