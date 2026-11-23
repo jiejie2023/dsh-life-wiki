@@ -198,6 +198,7 @@ export interface VaultSettings {
   dataDir: string | null
   recentDirs: string[]
   defaultSuggestedDir: string
+  defaultParentDir: string
 }
 
 export interface CommitResult {

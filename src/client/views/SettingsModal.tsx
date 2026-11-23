@@ -26,7 +26,9 @@ export function SettingsModal({
   const [confirmClear, setConfirmClear] = useState(false)
 
   const areasChanged = JSON.stringify(areas) !== JSON.stringify(snapshot.areas)
-  const otherRecent = settings.recentDirs.filter((d) => d !== snapshot.vaultRoot)
+  const otherRecent = settings.recentDirs.filter(
+    (d) => d.toLowerCase() !== snapshot.vaultRoot.toLowerCase(),
+  )
 
   const handleAddArea = (e: React.FormEvent) => {
     e.preventDefault()
@@ -51,7 +53,7 @@ export function SettingsModal({
           <div className="lw-stack" style={{ gap: 8 }}>
             <div className="lw-between">
               <span className="lw-field-label" style={{ margin: 0 }}>
-                当前目录
+                当前知识库（名称随本地文件夹名）
               </span>
               <button
                 type="button"
@@ -61,7 +63,7 @@ export function SettingsModal({
                   onSwitchVault()
                 }}
               >
-                切换 / 新建
+                新建 / 切换
               </button>
             </div>
             <div
@@ -133,7 +135,10 @@ export function SettingsModal({
 
           {/* Sample Data Cleanup */}
           {snapshot.hasSampleData && (
-            <div className="lw-between" style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--lw-subtle)' }}>
+            <div
+              className="lw-between"
+              style={{ padding: '10px 12px', borderRadius: 8, background: 'var(--lw-subtle)' }}
+            >
               <span style={{ fontSize: 13 }}>示例数据</span>
               {!confirmClear ? (
                 <button

@@ -51,12 +51,17 @@ describe('Life Wiki Host HTTP Seam (/api/life-wiki/*)', () => {
       })
       assert.equal(unauth.status, 403)
 
-      // 4. Initialize vault with sample data
+      // 4. Initialize vault inside parentDir using vaultName + sample data
       const initRes = (await (
         await fetch(`${baseUrl}/api/life-wiki/vault/init`, {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-life-wiki': '1' },
-          body: JSON.stringify({ dir: vaultDir, withSample: true, initGit: false }),
+          body: JSON.stringify({
+            parentDir: tmpRoot,
+            vaultName: 'my-life-wiki',
+            withSample: true,
+            initGit: false,
+          }),
         })
       ).json()) as { ok: boolean; data: { settings: { dataDir: string } } }
       assert.equal(initRes.ok, true)

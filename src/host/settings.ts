@@ -18,7 +18,12 @@ export async function createSettingsStore(options: {
   initialDataDir?: string | null
 } = {}): Promise<SettingsStore> {
   const settingsFile = options.settingsFile ?? join(homedir(), '.dsh', 'life-wiki-settings.json')
-  const defaultSuggestedDir = join(homedir(), 'LifeWiki')
+  const home = homedir()
+  const docsCandidate = join(home, 'Documents')
+  const docsStat = await stat(docsCandidate).catch(() => null)
+  const defaultParentDir = docsStat?.isDirectory() ? docsCandidate : home
+  const defaultSuggestedDir = join(defaultParentDir, 'Life Wiki')
+
   let activeDataDir: string | null = options.initialDataDir ? resolve(options.initialDataDir) : null
   let recentDirs: string[] = []
 
@@ -27,7 +32,9 @@ export async function createSettingsStore(options: {
       const raw = await readFile(settingsFile, 'utf8')
       const parsed = JSON.parse(raw) as StoredSettings
       if (Array.isArray(parsed.recentDirs)) {
-        recentDirs = parsed.recentDirs.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        recentDirs = parsed.recentDirs.filter(
+          (x): x is string => typeof x === 'string' && x.trim().length > 0,
+        )
       }
       if (typeof parsed.dataDir === 'string' && parsed.dataDir.trim()) {
         const candidate = resolve(parsed.dataDir.trim())
@@ -45,6 +52,7 @@ export async function createSettingsStore(options: {
     dataDir: activeDataDir,
     recentDirs,
     defaultSuggestedDir,
+    defaultParentDir,
   })
 
   return {
@@ -60,7 +68,10 @@ export async function createSettingsStore(options: {
           throw new Error(`目录不存在或不可访问：${candidate}`)
         }
         activeDataDir = candidate
-        recentDirs = [candidate, ...recentDirs.filter((d) => d.toLowerCase() !== candidate.toLowerCase())].slice(0, 6)
+        recentDirs = [
+          candidate,
+          ...recentDirs.filter((d) => d.toLowerCase() !== candidate.toLowerCase()),
+        ].slice(0, 6)
       }
       await mkdir(dirname(settingsFile), { recursive: true })
       await writeFile(

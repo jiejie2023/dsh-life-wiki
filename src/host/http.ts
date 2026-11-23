@@ -222,8 +222,17 @@ export function createHttpHandler(
       const data = await enqueueMutation(async () => {
         // Vault-level setup routes (allowed before dataDir is set)
         if (path === '/api/life-wiki/vault/init') {
-          const dir = String(body.dir ?? '').trim()
-          if (!dir) throw new Error('请先选择目标文件夹')
+          const parentDir = typeof body.parentDir === 'string' ? body.parentDir.trim() : ''
+          const vaultNameRaw = typeof body.vaultName === 'string' ? body.vaultName.trim() : ''
+          let dir = typeof body.dir === 'string' ? body.dir.trim() : ''
+          if (!dir && parentDir && vaultNameRaw) {
+            const safeName = vaultNameRaw.replace(/[<>:"/\\|?*\x00-\x1F]/g, '').trim()
+            if (!safeName || safeName === '.' || safeName === '..') {
+              throw new Error('知识库名称包含非法字符')
+            }
+            dir = join(resolve(parentDir), safeName)
+          }
+          if (!dir) throw new Error('请先输入知识库名称并选择存放位置')
           const withSample = body.withSample !== false
           const initGit = body.initGit === true
           const resInit = await initializeVault(dir, {

@@ -91,11 +91,19 @@ export const api = {
   inspectDirectory: (path: string) => apiGet<DirectoryInspection>('/fs/inspect', { path }),
   browseDirectories: (path?: string) => apiGet<DirectoryBrowseResult>('/fs/browse', { path }),
 
-  initVault: (opts: { dir: string; withSample: boolean; initGit: boolean }) =>
-    apiPost<{ rootDir: string; createdFiles: string[]; gitInitialized: boolean; settings: VaultSettings }>(
-      '/vault/init',
-      opts,
-    ),
+  initVault: (opts: {
+    dir?: string
+    parentDir?: string
+    vaultName?: string
+    withSample: boolean
+    initGit: boolean
+  }) =>
+    apiPost<{
+      rootDir: string
+      createdFiles: string[]
+      gitInitialized: boolean
+      settings: VaultSettings
+    }>('/vault/init', opts),
   openVault: (dir: string) => apiPost<{ settings: VaultSettings }>('/vault/open', { dir }),
   disconnectVault: () => apiPost<{ settings: VaultSettings }>('/vault/disconnect'),
   clearSampleData: () => apiPost<{ removedCount: number; skippedCount: number }>('/vault/clear-sample'),

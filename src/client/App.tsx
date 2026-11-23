@@ -1,7 +1,14 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { BoardSnapshot, VaultSettings } from '../shared/types.ts'
 import { api } from './api.ts'
-import { IconGit, IconInbox, IconRefresh, IconSettings } from './components/Icons.tsx'
+import {
+  IconChevronDown,
+  IconGit,
+  IconInbox,
+  IconPlus,
+  IconRefresh,
+  IconSettings,
+} from './components/Icons.tsx'
 import { ensureStyles } from './styles.ts'
 import { DiaryView } from './views/DiaryView.tsx'
 import { FileDrawer } from './views/FileDrawer.tsx'
@@ -27,6 +34,12 @@ export type RunActionFn = (
 function localTodayIso(): string {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function folderBasename(p: string): string {
+  const cleaned = p.replace(/[\\/]+$/, '')
+  const parts = cleaned.split(/[\\/]/)
+  return parts[parts.length - 1] || p
 }
 
 function detectHostTheme(): 'light' | 'dark' {
@@ -73,6 +86,7 @@ export function LifeWikiApp() {
   const [selectedDate, setSelectedDate] = useState<string>(() => localTodayIso())
   const [selectedWeek, setSelectedWeek] = useState<string | undefined>(undefined)
 
+  const [vaultMenuOpen, setVaultMenuOpen] = useState(false)
   const [inboxOpen, setInboxOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [drawerFile, setDrawerFile] = useState<string | null>(null)
@@ -91,7 +105,6 @@ export function LifeWikiApp() {
     return () => clearTimeout(t)
   }, [toast])
 
-  // Sync light/dark theme with DSH host
   useEffect(() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return
     const sync = () => setTheme(detectHostTheme())
@@ -110,7 +123,18 @@ export function LifeWikiApp() {
     return () => obs.disconnect()
   }, [])
 
-  // Esc key closes topmost overlay
+  useEffect(() => {
+    if (!vaultMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null
+      if (!target?.closest('[data-vault-menu]')) {
+        setVaultMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    return () => document.removeEventListener('mousedown', onDown)
+  }, [vaultMenuOpen])
+
   useEffect(() => {
     if (typeof window === 'undefined') return
     const onKeyDown = (e: KeyboardEvent) => {
@@ -124,11 +148,14 @@ export function LifeWikiApp() {
       } else if (settingsOpen) {
         e.preventDefault()
         setSettingsOpen(false)
+      } else if (vaultMenuOpen) {
+        e.preventDefault()
+        setVaultMenuOpen(false)
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [drawerFile, inboxOpen, settingsOpen])
+  }, [drawerFile, inboxOpen, settingsOpen, vaultMenuOpen])
 
   const fetchSnapshot = useCallback(
     async (dateArg: string, weekArg: string | undefined, withSettings: boolean) => {
@@ -155,7 +182,6 @@ export function LifeWikiApp() {
     [],
   )
 
-  // Initial load
   useEffect(() => {
     void fetchSnapshot(selectedDate, selectedWeek, true)
   }, [fetchSnapshot, selectedDate, selectedWeek])
@@ -193,24 +219,112 @@ export function LifeWikiApp() {
 
   const showOnboarding = !initialLoading && settings && (!settings.dataDir || switchingVault)
 
+  const otherRecentDirs =
+    settings && snapshot
+      ? settings.recentDirs.filter(
+          (d) => d.toLowerCase() !== snapshot.vaultRoot.toLowerCase(),
+        )
+      : []
+
   return (
     <div className="lw-root" data-lw-theme={theme}>
       {/* Calm 3-column Header */}
       <header className="lw-header">
         <div className="lw-brand">
-          <span className="lw-brand-name">Life Wiki</span>
-          {snapshot && !switchingVault && (
-            <>
-              <span className="lw-brand-sep">/</span>
+          {snapshot && !showOnboarding ? (
+            <div className="lw-menu-wrap" data-vault-menu>
               <button
                 type="button"
-                className="lw-vault-btn"
-                title={snapshot.vaultRoot}
-                onClick={() => setSettingsOpen(true)}
+                className={`lw-status-trigger ${vaultMenuOpen ? 'open' : ''}`}
+                style={{
+                  fontSize: 14.5,
+                  fontWeight: 600,
+                  color: 'var(--lw-text)',
+                  padding: '0 8px',
+                  height: 30,
+                }}
+                onClick={() => setVaultMenuOpen((v) => !v)}
               >
-                {snapshot.vaultName}
+                <span
+                  style={{
+                    maxWidth: 180,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {snapshot.vaultName}
+                </span>
+                <IconChevronDown size={13} />
               </button>
-            </>
+
+              {vaultMenuOpen && (
+                <div
+                  className="lw-menu"
+                  style={{ left: 0, right: 'auto', minWidth: 220, padding: 6 }}
+                >
+                  <div
+                    className="lw-mono lw-muted"
+                    style={{
+                      padding: '4px 8px 6px',
+                      fontSize: 11.5,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={snapshot.vaultRoot}
+                  >
+                    {snapshot.vaultRoot}
+                  </div>
+
+                  {otherRecentDirs.length > 0 && (
+                    <>
+                      <div className="lw-divider" style={{ margin: '4px 0' }} />
+                      <div className="lw-muted" style={{ padding: '3px 8px', fontSize: 11.5 }}>
+                        切换知识库
+                      </div>
+                      {otherRecentDirs.map((dir) => (
+                        <button
+                          key={dir}
+                          type="button"
+                          className="lw-menu-item"
+                          onClick={() => {
+                            setVaultMenuOpen(false)
+                            void runAction(() => api.openVault(dir), { reloadSettings: true })
+                          }}
+                        >
+                          <span
+                            style={{
+                              flex: 1,
+                              overflow: 'hidden',
+                              textOverflow: 'ellipsis',
+                              whiteSpace: 'nowrap',
+                            }}
+                          >
+                            {folderBasename(dir)}
+                          </span>
+                        </button>
+                      ))}
+                    </>
+                  )}
+
+                  <div className="lw-divider" style={{ margin: '4px 0' }} />
+                  <button
+                    type="button"
+                    className="lw-menu-item"
+                    onClick={() => {
+                      setVaultMenuOpen(false)
+                      setSwitchingVault(true)
+                    }}
+                  >
+                    <IconPlus size={13} />
+                    <span>新建 / 打开其他库</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <span className="lw-brand-name">Life Wiki</span>
           )}
         </div>
 
