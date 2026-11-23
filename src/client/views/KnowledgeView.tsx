@@ -1,11 +1,13 @@
 import React, { useMemo, useState } from 'react'
 import type { BoardSnapshot } from '../../shared/types.ts'
+import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
+import { IconExternal, IconPlus, IconSearch, IconX } from '../components/Icons.tsx'
 
 interface KnowledgeViewProps {
   snapshot: BoardSnapshot
   onOpenFile: (relPath: string) => void
-  onRunAction: (action: () => Promise<unknown>, toastText?: string) => Promise<void>
+  onRunAction: RunActionFn
 }
 
 export function KnowledgeView({
@@ -17,7 +19,6 @@ export function KnowledgeView({
   const [query, setQuery] = useState('')
   const [rawCategory, setRawCategory] = useState('ALL')
 
-  // New wiki page modal
   const [showNewWiki, setShowNewWiki] = useState(false)
   const [wikiTitle, setWikiTitle] = useState('')
   const [wikiSources, setWikiSources] = useState('')
@@ -60,124 +61,114 @@ export function KnowledgeView({
   const handleCreateWiki = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!wikiTitle.trim()) return
+    const title = wikiTitle.trim()
+    const body = wikiBody.trim()
     const sources = wikiSources
       .split(/[\n,，]/)
       .map((s) => s.trim())
       .filter(Boolean)
-    await onRunAction(async () => {
-      await api.createWikiPage(wikiTitle.trim(), wikiBody.trim(), sources)
-      setWikiTitle('')
-      setWikiSources('')
-      setWikiBody('')
-      setShowNewWiki(false)
-      setSubTab('wiki')
-    }, '已创建知识页，并同步更新 wiki/index.md 与 log.md')
+    setWikiTitle('')
+    setWikiSources('')
+    setWikiBody('')
+    setShowNewWiki(false)
+    await onRunAction(() => api.createWikiPage(title, body, sources))
   }
 
   return (
-    <div className="lw-container">
-      {/* Top toolbar */}
-      <div className="lw-between">
-        <div className="lw-tabs">
+    <div className="lw-canvas">
+      {/* Subtabs + Search + Action */}
+      <div className="lw-between" style={{ alignItems: 'flex-end' }}>
+        <div className="lw-subtabs" style={{ flex: 1 }}>
           <button
             type="button"
-            className={`lw-tab ${subTab === 'wiki' ? 'active' : ''}`}
+            className={`lw-subtab ${subTab === 'wiki' ? 'active' : ''}`}
             onClick={() => setSubTab('wiki')}
           >
-            Wiki 知识页 <span className="lw-muted">{wikiPages.length}</span>
+            Wiki
+            <span className="lw-muted">{wikiPages.length}</span>
           </button>
           <button
             type="button"
-            className={`lw-tab ${subTab === 'raw' ? 'active' : ''}`}
+            className={`lw-subtab ${subTab === 'raw' ? 'active' : ''}`}
             onClick={() => setSubTab('raw')}
           >
-            Raw 原件库 <span className="lw-muted">{rawEntries.length}</span>
+            原件库
+            <span className="lw-muted">{rawEntries.length}</span>
           </button>
         </div>
 
         <div className="lw-row">
-          <input
-            className="lw-input"
-            style={{ width: 220 }}
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder={subTab === 'wiki' ? '搜索知识页标题或内容…' : '搜索原件名、来源网址…'}
-          />
+          <div className="lw-capture" style={{ width: 185, padding: '4px 10px' }}>
+            <IconSearch size={13} />
+            <input
+              className="lw-inline-input"
+              style={{ fontSize: 13, padding: '1px 0' }}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="搜索"
+            />
+          </div>
           {subTab === 'wiki' && (
-            <>
-              <button
-                type="button"
-                className="lw-btn lw-btn-sm lw-btn-ghost"
-                onClick={() => onOpenFile('wiki/index.md')}
-              >
-                目录 index
-              </button>
-              <button
-                type="button"
-                className="lw-btn lw-btn-primary"
-                onClick={() => setShowNewWiki(true)}
-              >
-                + 新建知识页
-              </button>
-            </>
+            <button
+              type="button"
+              className="lw-btn lw-btn-sm lw-btn-primary"
+              onClick={() => setShowNewWiki(true)}
+            >
+              <IconPlus size={13} />
+              新建
+            </button>
           )}
         </div>
       </div>
 
-      {/* Wiki Sub-tab */}
       {subTab === 'wiki' ? (
         filteredWiki.length === 0 ? (
-          <div className="lw-empty">
-            {wikiPages.length === 0
-              ? 'wiki/ 里还没有知识页，点击右上角「+ 新建知识页」沉淀第一篇长期知识。'
-              : '没有找到匹配的知识页。'}
-          </div>
+          <div className="lw-empty">暂无知识页</div>
         ) : (
-          <div className="lw-grid-2">
+          <div className="lw-list">
             {filteredWiki.map((page) => (
               <div
                 key={page.relPath}
-                className="lw-card lw-stack"
-                style={{ cursor: 'pointer' }}
+                className="lw-project-row"
                 onClick={() => onOpenFile(page.relPath)}
               >
-                <div className="lw-between">
-                  <h3 className="lw-card-title">{page.title}</h3>
-                  {page.updated && <span className="lw-muted">{page.updated}</span>}
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14.5 }}>{page.title}</div>
+                  {page.excerpt && (
+                    <div
+                      className="lw-meta"
+                      style={{
+                        marginTop: 2,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {page.excerpt.replace(/[*`#_]/g, '')}
+                    </div>
+                  )}
                 </div>
-                {page.excerpt && (
-                  <div style={{ fontSize: 13, color: 'var(--lw-text-2)' }}>{page.excerpt}</div>
-                )}
-                {page.sources.length > 0 && (
-                  <div className="lw-row" style={{ marginTop: 'auto', paddingTop: 4 }}>
-                    {page.sources.slice(0, 3).map((src) => (
-                      <span key={src} className="lw-badge lw-mono">
-                        {src}
-                      </span>
-                    ))}
-                  </div>
-                )}
+                {page.updated && <span className="lw-muted">{page.updated}</span>}
               </div>
             ))}
           </div>
         )
       ) : (
-        /* Raw Sub-tab */
-        <div className="lw-stack" style={{ gap: 12 }}>
-          {rawCategories.length > 0 && (
-            <div className="lw-row">
+        <div className="lw-stack" style={{ gap: 14 }}>
+          {rawCategories.length > 1 && (
+            <div className="lw-row" style={{ gap: 6 }}>
               <button
                 type="button"
-                className={`lw-btn lw-btn-sm ${rawCategory === 'ALL' ? 'lw-btn-primary' : ''}`}
+                className={`lw-btn lw-btn-sm ${rawCategory === 'ALL' ? 'lw-btn-primary' : 'lw-btn-ghost'}`}
                 onClick={() => setRawCategory('ALL')}
               >
-                全部分类
+                全部
               </button>
               {rawCategories.map((cat) => (
                 <button
                   key={cat}
                   type="button"
-                  className={`lw-btn lw-btn-sm ${rawCategory === cat ? 'lw-btn-primary' : ''}`}
+                  className={`lw-btn lw-btn-sm ${rawCategory === cat ? 'lw-btn-primary' : 'lw-btn-ghost'}`}
                   onClick={() => setRawCategory(cat)}
                 >
                   {cat}
@@ -187,52 +178,48 @@ export function KnowledgeView({
           )}
 
           {filteredRaw.length === 0 ? (
-            <div className="lw-empty">
-              {rawEntries.length === 0
-                ? 'raw/ 目录里还没有收藏的外部原件（文章、书摘或 GitHub 仓库）。直接把 Markdown 文件或仓库放到 raw/ 下即可自动显示。'
-                : '当前筛选下没有原件。'}
-            </div>
+            <div className="lw-empty">暂无原件</div>
           ) : (
-            <div className="lw-stack" style={{ gap: 10 }}>
+            <div className="lw-list">
               {filteredRaw.map((entry) => (
-                <div key={entry.relPath} className="lw-card lw-between">
-                  <div className="lw-stack" style={{ gap: 4, minWidth: 0 }}>
-                    <div className="lw-row">
-                      <strong style={{ fontSize: 14.5 }}>{entry.name}</strong>
-                      <span className="lw-badge">
-                        {entry.kind === 'repo'
-                          ? 'GitHub 仓库'
-                          : entry.kind === 'folder'
-                            ? '文件夹'
-                            : '原件文件'}
-                      </span>
-                      {entry.tier && (
-                        <span className="lw-badge lw-badge-accent">{entry.tier}</span>
-                      )}
-                      {entry.category && <span className="lw-badge">{entry.category}</span>}
-                      {entry.fetched && <span className="lw-muted">收录 {entry.fetched}</span>}
-                    </div>
-                    <div className="lw-row" style={{ fontSize: 12.5 }}>
-                      <span className="lw-muted lw-mono">{entry.relPath}</span>
-                      {entry.sourceUrl && (
-                        <a
-                          href={entry.sourceUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          style={{ color: 'var(--lw-accent-text)' }}
-                        >
-                          原始链接 ↗
-                        </a>
-                      )}
-                    </div>
+                <div
+                  key={entry.relPath}
+                  className="lw-project-row"
+                  style={{ padding: '11px 12px' }}
+                  onClick={() => onOpenFile(entry.openRelPath)}
+                >
+                  <div className="lw-row" style={{ gap: 8, minWidth: 0, flex: 1 }}>
+                    <span
+                      style={{
+                        fontWeight: 500,
+                        fontSize: 14,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                    >
+                      {entry.name}
+                    </span>
+                    {entry.tier && <span className="lw-tag lw-tag-accent">{entry.tier}</span>}
+                    {entry.category && <span className="lw-muted">{entry.category}</span>}
                   </div>
-                  <button
-                    type="button"
-                    className="lw-btn lw-btn-sm"
-                    onClick={() => onOpenFile(entry.openRelPath)}
-                  >
-                    阅读
-                  </button>
+
+                  <div className="lw-row" style={{ gap: 10, flexShrink: 0 }}>
+                    {entry.fetched && <span className="lw-muted">{entry.fetched}</span>}
+                    {entry.sourceUrl && (
+                      <a
+                        href={entry.sourceUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="lw-icon-btn lw-hover-actions"
+                        style={{ height: 26, minWidth: 26 }}
+                        title="原始链接"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <IconExternal size={13} />
+                      </a>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -249,53 +236,47 @@ export function KnowledgeView({
             onSubmit={(e) => void handleCreateWiki(e)}
           >
             <div className="lw-panel-header">
-              <strong>新建 Wiki 知识页</strong>
-              <button
-                type="button"
-                className="lw-btn lw-btn-ghost lw-btn-sm"
-                onClick={() => setShowNewWiki(false)}
-              >
-                关闭
+              <strong>新建知识页</strong>
+              <button type="button" className="lw-icon-btn" onClick={() => setShowNewWiki(false)}>
+                <IconX />
               </button>
             </div>
-            <div className="lw-panel-body lw-stack">
+            <div className="lw-panel-body lw-stack" style={{ gap: 12 }}>
               <div>
-                <label className="lw-muted">页面标题（将保存为 wiki/标题.md）</label>
+                <label className="lw-field-label">标题</label>
                 <input
                   className="lw-input"
                   value={wikiTitle}
                   onChange={(e) => setWikiTitle(e.target.value)}
-                  placeholder="例如：深度模块设计原则"
                   autoFocus
                   required
                 />
               </div>
               <div>
-                <label className="lw-muted">依据原件路径（可选，多条用逗号或换行分隔）</label>
+                <label className="lw-field-label">依据原件（可选）</label>
                 <input
                   className="lw-input lw-mono"
                   value={wikiSources}
                   onChange={(e) => setWikiSources(e.target.value)}
-                  placeholder="例如：raw/articles/某篇文章.md"
+                  placeholder="raw/..."
                 />
               </div>
               <div>
-                <label className="lw-muted">正文（支持 Markdown）</label>
+                <label className="lw-field-label">正文</label>
                 <textarea
                   className="lw-textarea"
-                  style={{ minHeight: 160 }}
+                  style={{ minHeight: 150 }}
                   value={wikiBody}
                   onChange={(e) => setWikiBody(e.target.value)}
-                  placeholder="用自己的话总结核心结论、边界与用法…"
                 />
               </div>
             </div>
             <div className="lw-panel-footer">
-              <button type="button" className="lw-btn" onClick={() => setShowNewWiki(false)}>
+              <button type="button" className="lw-btn lw-btn-ghost" onClick={() => setShowNewWiki(false)}>
                 取消
               </button>
               <button type="submit" className="lw-btn lw-btn-primary">
-                保存并写入索引
+                保存
               </button>
             </div>
           </form>

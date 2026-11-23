@@ -4,6 +4,7 @@ import { rawFileUrl } from '../api.ts'
 interface MarkdownViewProps {
   content: string
   baseRelPath?: string
+  hideFrontmatter?: boolean
   onOpenImage?: (src: string) => void
 }
 
@@ -11,7 +12,11 @@ function resolveRelativeAsset(baseRelPath: string | undefined, target: string): 
   const cleaned = target.trim().replace(/^<|>$/g, '')
   if (/^https?:\/\//i.test(cleaned) || cleaned.startsWith('data:')) return cleaned
   const normalizedTarget = cleaned.replace(/\\/g, '/')
-  if (normalizedTarget.startsWith('raw/') || normalizedTarget.startsWith('projects/') || normalizedTarget.startsWith('wiki/')) {
+  if (
+    normalizedTarget.startsWith('raw/') ||
+    normalizedTarget.startsWith('projects/') ||
+    normalizedTarget.startsWith('wiki/')
+  ) {
     return rawFileUrl(normalizedTarget)
   }
   const baseDir = baseRelPath ? baseRelPath.replace(/\\/g, '/').split('/').slice(0, -1) : []
@@ -37,9 +42,7 @@ function renderInline(
   let key = 0
 
   while ((match = tokenRe.exec(text)) !== null) {
-    if (match.index > lastIndex) {
-      nodes.push(text.slice(lastIndex, match.index))
-    }
+    if (match.index > lastIndex) nodes.push(text.slice(lastIndex, match.index))
     if (match[1] !== undefined && match[2] !== undefined) {
       const src = resolveRelativeAsset(baseRelPath, match[2])
       nodes.push(
@@ -53,16 +56,15 @@ function renderInline(
       )
     } else if (match[3] !== undefined && match[4] !== undefined) {
       const href = match[4].trim()
-      const isExternal = /^https?:\/\//i.test(href)
-      nodes.push(
-        isExternal ? (
+      if (/^https?:\/\//i.test(href)) {
+        nodes.push(
           <a key={`a-${key++}`} href={href} target="_blank" rel="noreferrer">
             {match[3]}
-          </a>
-        ) : (
-          <code key={`ref-${key++}`}>{match[3]}</code>
-        ),
-      )
+          </a>,
+        )
+      } else {
+        nodes.push(<code key={`ref-${key++}`}>{match[3]}</code>)
+      }
     } else if (match[5] !== undefined) {
       nodes.push(<code key={`code-${key++}`}>{match[5]}</code>)
     } else if (match[6] !== undefined) {
@@ -72,13 +74,16 @@ function renderInline(
     }
     lastIndex = tokenRe.lastIndex
   }
-  if (lastIndex < text.length) {
-    nodes.push(text.slice(lastIndex))
-  }
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex))
   return nodes
 }
 
-export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownViewProps) {
+export function MarkdownView({
+  content,
+  baseRelPath,
+  hideFrontmatter,
+  onOpenImage,
+}: MarkdownViewProps) {
   const normalized = content.replace(/\r\n/g, '\n')
   let body = normalized
   const metaPairs: Array<[string, string]> = []
@@ -88,7 +93,8 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
     for (const line of fmMatch[1]!.split('\n')) {
       const idx = line.indexOf(':')
       if (idx > 0) {
-        metaPairs.push([line.slice(0, idx).trim(), line.slice(idx + 1).trim()])
+        const val = line.slice(idx + 1).trim()
+        if (val) metaPairs.push([line.slice(0, idx).trim(), val])
       }
     }
     body = fmMatch[2] ?? ''
@@ -100,15 +106,12 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
   let blockKey = 0
 
   while (i < lines.length) {
-    const line = lines[i]!
-    const trimmed = line.trim()
-
+    const trimmed = lines[i]!.trim()
     if (!trimmed) {
       i += 1
       continue
     }
 
-    // Fenced code block
     if (trimmed.startsWith('```')) {
       const codeLines: string[] = []
       i += 1
@@ -125,7 +128,6 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
       continue
     }
 
-    // Headings
     const hMatch = trimmed.match(/^(#{1,4})\s+(.+)$/)
     if (hMatch) {
       const level = hMatch[1]!.length
@@ -137,14 +139,12 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
       continue
     }
 
-    // Horizontal rule
     if (/^---+$/.test(trimmed)) {
-      blocks.push(<div key={`hr-${blockKey++}`} className="lw-divider" />)
+      blocks.push(<div key={`hr-${blockKey++}`} className="lw-divider" style={{ margin: '12px 0' }} />)
       i += 1
       continue
     }
 
-    // Blockquote
     if (trimmed.startsWith('>')) {
       const qLines: string[] = []
       while (i < lines.length && lines[i]!.trim().startsWith('>')) {
@@ -161,7 +161,6 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
       continue
     }
 
-    // Unordered list
     if (/^[-*]\s+/.test(trimmed)) {
       const items: React.ReactNode[] = []
       while (i < lines.length && /^[-*]\s+/.test(lines[i]!.trim())) {
@@ -171,8 +170,10 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
           const checked = chk[1]!.toLowerCase() === 'x'
           items.push(
             <li key={i} style={{ listStyle: 'none', marginLeft: -16 }}>
-              <span style={{ marginRight: 6 }}>{checked ? '☑' : '☐'}</span>
-              <span className={checked ? 'lw-task-done' : undefined}>
+              <span className="lw-muted" style={{ marginRight: 6 }}>
+                {checked ? '✓' : '○'}
+              </span>
+              <span className={checked ? 'lw-item-done' : undefined}>
                 {renderInline(chk[2]!, baseRelPath, onOpenImage)}
               </span>
             </li>,
@@ -186,7 +187,6 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
       continue
     }
 
-    // Ordered list
     if (/^\d+\.\s+/.test(trimmed)) {
       const items: React.ReactNode[] = []
       while (i < lines.length && /^\d+\.\s+/.test(lines[i]!.trim())) {
@@ -198,7 +198,6 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
       continue
     }
 
-    // Paragraph
     const paraLines: string[] = []
     while (
       i < lines.length &&
@@ -222,11 +221,11 @@ export function MarkdownView({ content, baseRelPath, onOpenImage }: MarkdownView
 
   return (
     <div className="lw-md">
-      {metaPairs.length > 0 && (
-        <div className="lw-row" style={{ marginBottom: 12 }}>
+      {!hideFrontmatter && metaPairs.length > 0 && (
+        <div className="lw-row" style={{ marginBottom: 14, gap: 6 }}>
           {metaPairs.map(([k, v]) => (
-            <span key={k} className="lw-badge">
-              {k}: {v || '—'}
+            <span key={k} className="lw-tag">
+              {k}: {v}
             </span>
           ))}
         </div>

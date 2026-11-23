@@ -1,6 +1,16 @@
-import React, { useState } from 'react'
+import React, { useMemo, useRef, useState } from 'react'
 import type { BoardSnapshot, ProjectTaskGroup, TaskFileStatus } from '../../shared/types.ts'
+import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
+import {
+  IconCheck,
+  IconChevronLeft,
+  IconChevronRight,
+  IconClock,
+  IconFile,
+  IconPlus,
+  IconX,
+} from '../components/Icons.tsx'
 
 interface TodayViewProps {
   snapshot: BoardSnapshot
@@ -8,8 +18,10 @@ interface TodayViewProps {
   onDateChange: (nextDate: string) => void
   onOpenFile: (relPath: string) => void
   onJumpToDiary: () => void
-  onRunAction: (action: () => Promise<unknown>, toastText?: string) => Promise<void>
+  onRunAction: RunActionFn
 }
+
+const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 function shiftDate(isoDate: string, deltaDays: number): string {
   const [y, m, d] = isoDate.split('-').map(Number)
@@ -22,6 +34,13 @@ function todayLocalIso(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function formatReadableDate(isoDate: string): string {
+  const [y, m, d] = isoDate.split('-').map(Number)
+  if (!y || !m || !d) return isoDate
+  const dt = new Date(y, m - 1, d)
+  return `${m}月${d}日 · ${WEEKDAYS[dt.getDay()]}`
+}
+
 export function TodayView({
   snapshot,
   selectedDate,
@@ -31,14 +50,30 @@ export function TodayView({
   onRunAction,
 }: TodayViewProps) {
   const [diaryText, setDiaryText] = useState('')
-  const [showWarnings, setShowWarnings] = useState(false)
   const [newTaskInputs, setNewTaskInputs] = useState<Record<string, string>>({})
-  const [minuteDrafts, setMinuteDrafts] = useState<Record<string, string>>({})
+  const [durationOpenKey, setDurationOpenKey] = useState<string | null>(null)
   const [expandedLogs, setExpandedLogs] = useState<Record<string, boolean>>({})
   const [noteInputs, setNoteInputs] = useState<Record<string, string>>({})
   const [noteKinds, setNoteKinds] = useState<Record<string, 'log' | 'reflection'>>({})
+  const [revealedProjects, setRevealedProjects] = useState<Record<string, boolean>>({})
+  const [warningsModalOpen, setWarningsModalOpen] = useState(false)
+  const dateInputRef = useRef<HTMLInputElement>(null)
 
   const { diary, groups, formatWarnings } = snapshot.today
+  const isToday = selectedDate === todayLocalIso()
+
+  const { activeGroups, idleGroups } = useMemo(() => {
+    const active: ProjectTaskGroup[] = []
+    const idle: ProjectTaskGroup[] = []
+    for (const g of groups) {
+      if (g.exists || g.projectStatus === 'doing' || revealedProjects[g.projectName]) {
+        active.push(g)
+      } else {
+        idle.push(g)
+      }
+    }
+    return { activeGroups: active, idleGroups: idle }
+  }, [groups, revealedProjects])
 
   const totalDone = groups.reduce(
     (sum, g) => sum + g.tasks.filter((t) => t.checked).length,
@@ -51,33 +86,107 @@ export function TodayView({
     e.preventDefault()
     const trimmed = diaryText.trim()
     if (!trimmed) return
-    await onRunAction(async () => {
-      await api.appendDiary(trimmed, selectedDate)
-      setDiaryText('')
-    }, '已追加到日记')
+    setDiaryText('')
+    await onRunAction(() => api.appendDiary(trimmed, selectedDate), {
+      optimistic: (prev) => ({
+        ...prev,
+        today: {
+          ...prev.today,
+          diary: {
+            ...prev.today.diary,
+            exists: true,
+            preview: trimmed,
+            entryCount: prev.today.diary.entryCount + 1,
+          },
+        },
+      }),
+    })
+  }
+
+  const handleToggleTask = async (
+    group: ProjectTaskGroup,
+    lineIndex: number,
+    minutes?: number,
+  ) => {
+    setDurationOpenKey(null)
+    await onRunAction(() => api.toggleTask(group.fileRelPath, lineIndex, minutes), {
+      optimistic: (prev) => ({
+        ...prev,
+        today: {
+          ...prev.today,
+          groups: prev.today.groups.map((g) => {
+            if (g.fileRelPath !== group.fileRelPath) return g
+            const nextTasks = g.tasks.map((t) => {
+              if (t.lineIndex !== lineIndex) return t
+              const nextChecked = !t.checked
+              return {
+                ...t,
+                checked: nextChecked,
+                minutes: nextChecked ? (minutes ?? t.minutes) : t.minutes,
+              }
+            })
+            return {
+              ...g,
+              tasks: nextTasks,
+              totalMinutes: nextTasks.reduce(
+                (s, t) => s + (t.checked && t.minutes ? t.minutes : 0),
+                0,
+              ),
+            }
+          }),
+        },
+      }),
+    })
   }
 
   const handleAddTask = async (projectName: string) => {
     const text = (newTaskInputs[projectName] ?? '').trim()
     if (!text) return
-    await onRunAction(async () => {
-      await api.addTask(projectName, text, selectedDate)
-      setNewTaskInputs((prev) => ({ ...prev, [projectName]: '' }))
-    }, '已添加任务')
+    setNewTaskInputs((prev) => ({ ...prev, [projectName]: '' }))
+    await onRunAction(() => api.addTask(projectName, text, selectedDate), {
+      optimistic: (prev) => ({
+        ...prev,
+        today: {
+          ...prev.today,
+          groups: prev.today.groups.map((g) =>
+            g.projectName !== projectName
+              ? g
+              : {
+                  ...g,
+                  exists: true,
+                  status: g.status ?? 'doing',
+                  tasks: [
+                    ...g.tasks,
+                    {
+                      lineIndex: -Date.now(),
+                      checked: false,
+                      text,
+                      minutes: null,
+                      fromDate: null,
+                      rawLine: `- [ ] ${text}`,
+                    },
+                  ],
+                },
+          ),
+        },
+      }),
+    })
   }
 
-  const handleToggleTask = async (group: ProjectTaskGroup, lineIndex: number, currentlyChecked: boolean) => {
-    const key = `${group.fileRelPath}:${lineIndex}`
-    const rawMins = minuteDrafts[key]?.trim()
-    const parsedMins =
-      !currentlyChecked && rawMins && /^\d+$/.test(rawMins) && Number(rawMins) > 0
-        ? Number(rawMins)
-        : undefined
-    await onRunAction(async () => {
-      await api.toggleTask(group.fileRelPath, lineIndex, parsedMins)
-      if (parsedMins !== undefined) {
-        setMinuteDrafts((prev) => ({ ...prev, [key]: '' }))
-      }
+  const handleCycleStatus = async (group: ProjectTaskGroup) => {
+    const order: TaskFileStatus[] = ['todo', 'doing', 'done']
+    const cur = group.status ?? 'doing'
+    const next = order[(order.indexOf(cur) + 1) % order.length]!
+    await onRunAction(() => api.updateTaskStatus(group.fileRelPath, next), {
+      optimistic: (prev) => ({
+        ...prev,
+        today: {
+          ...prev.today,
+          groups: prev.today.groups.map((g) =>
+            g.fileRelPath === group.fileRelPath ? { ...g, status: next } : g,
+          ),
+        },
+      }),
     })
   }
 
@@ -85,41 +194,75 @@ export function TodayView({
     const text = (noteInputs[group.projectName] ?? '').trim()
     if (!text) return
     const section = noteKinds[group.projectName] ?? 'log'
-    await onRunAction(async () => {
-      await api.appendTaskEntry(group.fileRelPath, section, text)
-      setNoteInputs((prev) => ({ ...prev, [group.projectName]: '' }))
-    }, section === 'log' ? '已记录日志' : '已记录反思')
+    setNoteInputs((prev) => ({ ...prev, [group.projectName]: '' }))
+    await onRunAction(() => api.appendTaskEntry(group.fileRelPath, section, text), {
+      optimistic: (prev) => ({
+        ...prev,
+        today: {
+          ...prev.today,
+          groups: prev.today.groups.map((g) => {
+            if (g.fileRelPath !== group.fileRelPath) return g
+            return section === 'log'
+              ? { ...g, logs: [...g.logs, text] }
+              : { ...g, reflections: [...g.reflections, text] }
+          }),
+        },
+      }),
+    })
   }
 
   return (
-    <div className="lw-container">
-      {/* Date bar & overview stats */}
-      <div className="lw-between">
-        <div className="lw-row">
-          <button
-            type="button"
-            className="lw-btn lw-btn-sm"
-            onClick={() => onDateChange(shiftDate(selectedDate, -1))}
+    <div className="lw-canvas">
+      {/* Calm Date Header */}
+      <div className="lw-page-head">
+        <div className="lw-row" style={{ gap: 6 }}>
+          <h1
+            className="lw-h1"
+            style={{ cursor: 'pointer' }}
+            title="点击选择日期"
+            onClick={() => {
+              try {
+                dateInputRef.current?.showPicker?.()
+              } catch {
+                dateInputRef.current?.focus()
+                dateInputRef.current?.click()
+              }
+            }}
           >
-            前一天
-          </button>
+            {formatReadableDate(selectedDate)}
+          </h1>
           <input
+            ref={dateInputRef}
             type="date"
-            className="lw-input"
-            style={{ width: 150, padding: '5px 9px' }}
             value={selectedDate}
             onChange={(e) => {
               if (e.target.value) onDateChange(e.target.value)
             }}
+            style={{
+              position: 'absolute',
+              opacity: 0,
+              pointerEvents: 'none',
+              width: 1,
+              height: 1,
+            }}
           />
           <button
             type="button"
-            className="lw-btn lw-btn-sm"
+            className="lw-icon-btn"
+            title="前一天"
+            onClick={() => onDateChange(shiftDate(selectedDate, -1))}
+          >
+            <IconChevronLeft />
+          </button>
+          <button
+            type="button"
+            className="lw-icon-btn"
+            title="后一天"
             onClick={() => onDateChange(shiftDate(selectedDate, 1))}
           >
-            后一天
+            <IconChevronRight />
           </button>
-          {selectedDate !== todayLocalIso() && (
+          {!isToday && (
             <button
               type="button"
               className="lw-btn lw-btn-sm lw-btn-ghost"
@@ -130,180 +273,101 @@ export function TodayView({
           )}
         </div>
 
-        <div className="lw-row">
-          <span className="lw-badge lw-badge-accent">
-            今日完成 {totalDone} / {totalTasks}
-          </span>
-          <span className="lw-badge">投入 {totalMinutes} 分钟</span>
-          <span className="lw-badge">周次 {snapshot.week}</span>
+        <div className="lw-muted" style={{ display: 'flex', gap: 14, alignItems: 'center' }}>
+          {totalTasks > 0 && (
+            <span>
+              {totalDone} / {totalTasks} 完成
+            </span>
+          )}
+          {totalMinutes > 0 && <span>{totalMinutes}m</span>}
+          {formatWarnings.length > 0 && (
+            <button
+              type="button"
+              className="lw-btn lw-btn-sm lw-btn-ghost"
+              style={{ color: 'var(--lw-warn)', padding: '0 6px' }}
+              onClick={() => setWarningsModalOpen(true)}
+            >
+              {formatWarnings.length} 项格式提醒
+            </button>
+          )}
         </div>
       </div>
 
-      {/* Format warnings */}
-      {formatWarnings.length > 0 && (
-        <div className="lw-banner lw-banner-warn" style={{ flexDirection: 'column', gap: 6 }}>
-          <div className="lw-between" style={{ width: '100%' }}>
-            <span>
-              检测到 {formatWarnings.length} 个任务文件不符合标准模板格式（不影响浏览，建议修正以便周复盘统计）
-            </span>
-            <button
-              type="button"
-              className="lw-btn lw-btn-sm"
-              onClick={() => setShowWarnings((v) => !v)}
-            >
-              {showWarnings ? '收起' : '查看详情'}
+      {/* Quiet Diary Line */}
+      <div className="lw-stack" style={{ gap: 6 }}>
+        <form className="lw-capture" onSubmit={(e) => void handleDiaryAppend(e)}>
+          <input
+            className="lw-inline-input"
+            style={{ padding: '2px 0' }}
+            value={diaryText}
+            onChange={(e) => setDiaryText(e.target.value)}
+            placeholder="记一句今天的日记…"
+          />
+          {diaryText.trim() ? (
+            <button type="submit" className="lw-btn lw-btn-sm lw-btn-primary">
+              记下
             </button>
-          </div>
-          {showWarnings && (
-            <div className="lw-stack" style={{ width: '100%', gap: 4 }}>
-              {formatWarnings.map((w) => (
-                <div key={w.fileRelPath} className="lw-between" style={{ fontSize: 12.5 }}>
-                  <span>
-                    <strong>{w.projectName}</strong> ({w.date})：{w.issues.join('；')}
-                  </span>
-                  <button
-                    type="button"
-                    className="lw-btn lw-btn-sm"
-                    onClick={() => onOpenFile(w.fileRelPath)}
-                  >
-                    打开修复
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Today's Diary Strip */}
-      <div className="lw-card">
-        <div className="lw-between" style={{ marginBottom: 8 }}>
-          <div className="lw-row">
-            <h3 className="lw-card-title">今日日记</h3>
-            {diary.exists ? (
-              <span className="lw-badge lw-badge-accent">
-                已写 {diary.entryCount || 1} 段
-              </span>
-            ) : (
-              <span className="lw-badge">今日未记录</span>
-            )}
-          </div>
-          <div className="lw-row">
-            {diary.exists && (
-              <button
-                type="button"
-                className="lw-btn lw-btn-sm lw-btn-ghost"
-                onClick={() => onOpenFile(diary.relPath)}
-              >
-                打开原文
-              </button>
-            )}
+          ) : diary.exists ? (
             <button
               type="button"
               className="lw-btn lw-btn-sm lw-btn-ghost"
               onClick={onJumpToDiary}
             >
-              全部日记 →
+              已记 {diary.entryCount || 1} 段
             </button>
-          </div>
-        </div>
-
+          ) : null}
+        </form>
         {diary.exists && diary.preview && (
           <div
+            className="lw-muted"
             style={{
-              fontSize: 13,
-              color: 'var(--lw-text-2)',
-              marginBottom: 10,
-              padding: '7px 10px',
-              background: 'var(--lw-surface-2)',
-              borderRadius: 7,
+              paddingLeft: 12,
+              cursor: 'pointer',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
             }}
+            onClick={() => onOpenFile(diary.relPath)}
           >
             {diary.preview}
           </div>
         )}
-
-        <form className="lw-row" onSubmit={(e) => void handleDiaryAppend(e)}>
-          <input
-            className="lw-input"
-            style={{ flex: 1 }}
-            value={diaryText}
-            onChange={(e) => setDiaryText(e.target.value)}
-            placeholder="随手记一句今天发生的事、感受或进度，回车追加到日记…"
-          />
-          <button type="submit" className="lw-btn lw-btn-primary" disabled={!diaryText.trim()}>
-            记一笔
-          </button>
-        </form>
       </div>
 
-      {/* Project Daily Tasks */}
-      {groups.length === 0 ? (
+      {/* Active Project Task Sections */}
+      {activeGroups.length === 0 ? (
         <div className="lw-empty">
-          <div style={{ fontWeight: 600, color: 'var(--lw-text)', marginBottom: 6 }}>
-            当前还没有进行中的项目
-          </div>
-          <div>可以先到「项目」页新建项目，或把一个想法正式立项。</div>
+          还没有进行中的项目，去「项目」页新建一个吧。
         </div>
       ) : (
-        <div className="lw-stack" style={{ gap: 14 }}>
-          {groups.map((group) => {
-            const doneCount = group.tasks.filter((t) => t.checked).length
+        <div className="lw-stack" style={{ gap: 26 }}>
+          {activeGroups.map((group) => {
             const logsOpen = Boolean(expandedLogs[group.projectName])
             const noteKind = noteKinds[group.projectName] ?? 'log'
+            const noteCount = group.logs.length + group.reflections.length
 
             return (
-              <div key={group.projectName} className="lw-card">
-                <div className="lw-card-header">
-                  <div className="lw-row">
-                    <h3 className="lw-card-title">{group.projectName}</h3>
-                    {group.area && <span className="lw-badge">{group.area}</span>}
-                    {group.exists && (
-                      <select
-                        className="lw-select"
-                        style={{ width: 'auto', padding: '2px 8px', fontSize: 12 }}
-                        value={group.status ?? 'doing'}
-                        onChange={(e) =>
-                          void onRunAction(
-                            () =>
-                              api.updateTaskStatus(
-                                group.fileRelPath,
-                                e.target.value as TaskFileStatus,
-                              ),
-                            '已更新任务状态',
-                          )
-                        }
-                      >
-                        <option value="todo">todo</option>
-                        <option value="doing">doing</option>
-                        <option value="done">done</option>
-                      </select>
-                    )}
-                    {group.exists && (
-                      <span className="lw-muted">
-                        {doneCount}/{group.tasks.length} 项 · {group.totalMinutes} 分钟
-                      </span>
+              <section key={group.projectName} className="lw-stack" style={{ gap: 6 }}>
+                <div className="lw-section-head">
+                  <div className="lw-row" style={{ gap: 8 }}>
+                    <h2 className="lw-section-title">{group.projectName}</h2>
+                    {group.area && <span className="lw-muted">{group.area}</span>}
+                    {group.totalMinutes > 0 && (
+                      <span className="lw-muted">{group.totalMinutes}m</span>
                     )}
                   </div>
 
-                  <div className="lw-row">
-                    {!group.exists ? (
-                      <button
-                        type="button"
-                        className="lw-btn lw-btn-sm"
-                        onClick={() =>
-                          void onRunAction(
-                            async () => {
-                              await api.createTaskFile(group.projectName, selectedDate)
-                            },
-                            '已创建今日任务文件',
-                          )
-                        }
-                      >
-                        新建今日文件
-                      </button>
-                    ) : (
+                  <div className="lw-hover-actions">
+                    {group.exists && (
                       <>
+                        <button
+                          type="button"
+                          className="lw-btn lw-btn-sm lw-btn-ghost"
+                          title="点击切换当日状态"
+                          onClick={() => void handleCycleStatus(group)}
+                        >
+                          {group.status ?? 'doing'}
+                        </button>
                         <button
                           type="button"
                           className="lw-btn lw-btn-sm lw-btn-ghost"
@@ -314,139 +378,133 @@ export function TodayView({
                             }))
                           }
                         >
-                          日志与反思 ({group.logs.length + group.reflections.length})
+                          日志{noteCount > 0 ? ` ${noteCount}` : ''}
                         </button>
                         <button
                           type="button"
-                          className="lw-btn lw-btn-sm lw-btn-ghost"
+                          className="lw-icon-btn"
+                          title="打开原文"
                           onClick={() => onOpenFile(group.fileRelPath)}
                         >
-                          打开原文
+                          <IconFile size={14} />
                         </button>
                       </>
                     )}
                   </div>
                 </div>
 
-                {!group.valid && group.formatIssues.length > 0 && (
-                  <div className="lw-banner lw-banner-warn" style={{ marginBottom: 10 }}>
-                    格式提示：{group.formatIssues.join('；')}
-                  </div>
-                )}
+                {/* Tasks */}
+                <div className="lw-list">
+                  {group.tasks.map((task) => {
+                    const rowKey = `${group.fileRelPath}:${task.lineIndex}`
+                    const durOpen = durationOpenKey === rowKey
+                    return (
+                      <div key={task.lineIndex} className="lw-item-row">
+                        <button
+                          type="button"
+                          className={`lw-check ${task.checked ? 'checked' : ''}`}
+                          onClick={() => void handleToggleTask(group, task.lineIndex)}
+                          aria-label={task.checked ? '取消完成' : '标记完成'}
+                        >
+                          {task.checked && <IconCheck />}
+                        </button>
 
-                {group.tasks.length > 0 && (
-                  <div className="lw-task-list" style={{ marginBottom: 10 }}>
-                    {group.tasks.map((task) => {
-                      const draftKey = `${group.fileRelPath}:${task.lineIndex}`
-                      return (
-                        <div key={task.lineIndex} className="lw-task-item">
-                          <input
-                            type="checkbox"
-                            checked={task.checked}
-                            onChange={() =>
-                              void handleToggleTask(group, task.lineIndex, task.checked)
-                            }
-                          />
-                          <div className={`lw-task-text ${task.checked ? 'lw-task-done' : ''}`}>
-                            {task.text}
-                          </div>
+                        <div className={`lw-item-title ${task.checked ? 'lw-item-done' : ''}`}>
+                          {task.text}
                           {task.fromDate && (
-                            <span className="lw-badge" title="顺延自历史日期">
-                              顺延 {task.fromDate}
+                            <span className="lw-muted" style={{ marginLeft: 8 }}>
+                              {task.fromDate}
                             </span>
                           )}
-                          {task.checked && task.minutes !== null && (
-                            <span className="lw-badge lw-badge-accent">{task.minutes}m</span>
-                          )}
-                          {!task.checked && (
-                            <input
-                              className="lw-input"
-                              style={{ width: 64, padding: '2px 6px', fontSize: 12 }}
-                              placeholder="分钟"
-                              title="勾选前可选填耗时（分钟）"
-                              value={minuteDrafts[draftKey] ?? ''}
-                              onChange={(e) =>
-                                setMinuteDrafts((prev) => ({
-                                  ...prev,
-                                  [draftKey]: e.target.value,
-                                }))
-                              }
-                            />
-                          )}
                         </div>
-                      )
-                    })}
-                  </div>
-                )}
 
-                {/* Quick add task */}
-                <form
-                  className="lw-row"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    void handleAddTask(group.projectName)
-                  }}
-                >
-                  <input
-                    className="lw-input"
-                    style={{ flex: 1 }}
-                    value={newTaskInputs[group.projectName] ?? ''}
-                    onChange={(e) =>
-                      setNewTaskInputs((prev) => ({
-                        ...prev,
-                        [group.projectName]: e.target.value,
-                      }))
-                    }
-                    placeholder={
-                      group.exists
-                        ? '+ 添加今日任务，按回车确认'
-                        : '+ 直接输入今天的第一件事，回车将自动建立今日文件'
-                    }
-                  />
-                  <button
-                    type="submit"
-                    className="lw-btn lw-btn-sm"
-                    disabled={!(newTaskInputs[group.projectName] ?? '').trim()}
+                        {task.checked && task.minutes !== null ? (
+                          <span className="lw-muted">{task.minutes}m</span>
+                        ) : !task.checked ? (
+                          durOpen ? (
+                            <div className="lw-popover-row">
+                              {[15, 30, 45, 60].map((m) => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  className="lw-pop-chip"
+                                  onClick={() => void handleToggleTask(group, task.lineIndex, m)}
+                                >
+                                  {m}m
+                                </button>
+                              ))}
+                              <button
+                                type="button"
+                                className="lw-pop-chip"
+                                onClick={() => setDurationOpenKey(null)}
+                              >
+                                <IconX size={11} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="lw-hover-actions">
+                              <button
+                                type="button"
+                                className="lw-icon-btn"
+                                style={{ height: 24, minWidth: 24, padding: '0 5px' }}
+                                title="记录用时并完成"
+                                onClick={() => setDurationOpenKey(rowKey)}
+                              >
+                                <IconClock size={13} />
+                              </button>
+                            </div>
+                          )
+                        ) : null}
+                      </div>
+                    )
+                  })}
+
+                  {/* Seamless inline add task */}
+                  <form
+                    className="lw-row"
+                    style={{ padding: '4px 0 2px 28px' }}
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      void handleAddTask(group.projectName)
+                    }}
                   >
-                    添加
-                  </button>
-                </form>
+                    <input
+                      className="lw-inline-input"
+                      style={{ flex: 1, fontSize: 13.5 }}
+                      value={newTaskInputs[group.projectName] ?? ''}
+                      onChange={(e) =>
+                        setNewTaskInputs((prev) => ({
+                          ...prev,
+                          [group.projectName]: e.target.value,
+                        }))
+                      }
+                      placeholder="+ 添加任务"
+                    />
+                  </form>
+                </div>
 
-                {/* Logs & Reflections drawer inside card */}
+                {/* Collapsible Log & Reflection */}
                 {group.exists && logsOpen && (
                   <div
                     className="lw-stack"
                     style={{
-                      marginTop: 12,
-                      paddingTop: 12,
-                      borderTop: '1px solid var(--lw-border)',
+                      marginLeft: 28,
+                      padding: '10px 14px',
+                      borderRadius: 8,
+                      background: 'var(--lw-subtle)',
+                      gap: 8,
                     }}
                   >
-                    {group.logs.length > 0 && (
-                      <div>
-                        <div className="lw-muted" style={{ fontWeight: 600, marginBottom: 4 }}>
-                          日志
-                        </div>
-                        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
-                          {group.logs.map((item, idx) => (
-                            <li key={idx}>{item}</li>
-                          ))}
-                        </ul>
+                    {group.logs.map((l, i) => (
+                      <div key={`l-${i}`} style={{ fontSize: 13, color: 'var(--lw-text-2)' }}>
+                        · {l}
                       </div>
-                    )}
-                    {group.reflections.length > 0 && (
-                      <div>
-                        <div className="lw-muted" style={{ fontWeight: 600, marginBottom: 4 }}>
-                          反思
-                        </div>
-                        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
-                          {group.reflections.map((item, idx) => (
-                            <li key={idx}>{item}</li>
-                          ))}
-                        </ul>
+                    ))}
+                    {group.reflections.map((r, i) => (
+                      <div key={`r-${i}`} style={{ fontSize: 13, color: 'var(--lw-accent-text)' }}>
+                        ↳ {r}
                       </div>
-                    )}
-
+                    ))}
                     <form
                       className="lw-row"
                       onSubmit={(e) => {
@@ -454,24 +512,21 @@ export function TodayView({
                         void handleAppendNote(group)
                       }}
                     >
-                      <select
-                        className="lw-select"
-                        style={{ width: 88 }}
-                        value={noteKind}
-                        onChange={(e) =>
+                      <button
+                        type="button"
+                        className="lw-btn lw-btn-sm lw-btn-ghost"
+                        onClick={() =>
                           setNoteKinds((prev) => ({
                             ...prev,
-                            [group.projectName]:
-                              e.target.value === 'reflection' ? 'reflection' : 'log',
+                            [group.projectName]: noteKind === 'log' ? 'reflection' : 'log',
                           }))
                         }
                       >
-                        <option value="log">日志</option>
-                        <option value="reflection">反思</option>
-                      </select>
+                        {noteKind === 'log' ? '日志' : '反思'}
+                      </button>
                       <input
-                        className="lw-input"
-                        style={{ flex: 1 }}
+                        className="lw-inline-input"
+                        style={{ flex: 1, fontSize: 13 }}
                         value={noteInputs[group.projectName] ?? ''}
                         onChange={(e) =>
                           setNoteInputs((prev) => ({
@@ -479,25 +534,77 @@ export function TodayView({
                             [group.projectName]: e.target.value,
                           }))
                         }
-                        placeholder={
-                          noteKind === 'log'
-                            ? '记录今天做了什么进展、遇到什么卡点…'
-                            : '记录今天的复盘或下次改进点…'
-                        }
+                        placeholder={noteKind === 'log' ? '写一条日志，回车保存…' : '写一条反思，回车保存…'}
                       />
-                      <button
-                        type="submit"
-                        className="lw-btn lw-btn-sm"
-                        disabled={!(noteInputs[group.projectName] ?? '').trim()}
-                      >
-                        记录
-                      </button>
                     </form>
                   </div>
                 )}
-              </div>
+              </section>
             )
           })}
+        </div>
+      )}
+
+      {/* Idle Projects quiet strip */}
+      {idleGroups.length > 0 && (
+        <div className="lw-row" style={{ paddingTop: 4 }}>
+          <span className="lw-muted">其他项目：</span>
+          {idleGroups.map((g) => (
+            <button
+              key={g.projectName}
+              type="button"
+              className="lw-btn lw-btn-sm lw-btn-ghost"
+              onClick={() =>
+                setRevealedProjects((prev) => ({ ...prev, [g.projectName]: true }))
+              }
+            >
+              <IconPlus size={12} />
+              {g.projectName}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Quiet Format Warnings Modal (only on explicit click) */}
+      {warningsModalOpen && (
+        <div
+          className="lw-backdrop lw-backdrop-center"
+          onClick={() => setWarningsModalOpen(false)}
+        >
+          <div className="lw-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="lw-panel-header">
+              <strong>非标任务文件 ({formatWarnings.length})</strong>
+              <button
+                type="button"
+                className="lw-icon-btn"
+                onClick={() => setWarningsModalOpen(false)}
+              >
+                <IconX />
+              </button>
+            </div>
+            <div className="lw-panel-body lw-stack" style={{ gap: 8 }}>
+              {formatWarnings.map((w) => (
+                <div key={w.fileRelPath} className="lw-between" style={{ padding: '4px 0' }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 500 }}>
+                      {w.projectName} · {w.date}
+                    </div>
+                    <div className="lw-muted">{w.issues.join(' / ')}</div>
+                  </div>
+                  <button
+                    type="button"
+                    className="lw-btn lw-btn-sm"
+                    onClick={() => {
+                      setWarningsModalOpen(false)
+                      onOpenFile(w.fileRelPath)
+                    }}
+                  >
+                    打开
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>

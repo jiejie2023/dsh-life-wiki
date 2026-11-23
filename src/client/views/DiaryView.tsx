@@ -1,13 +1,15 @@
 import React, { useMemo, useState } from 'react'
 import type { BoardSnapshot } from '../../shared/types.ts'
+import type { RunActionFn } from '../App.tsx'
 import { api, rawFileUrl } from '../api.ts'
+import { IconFile, IconSearch } from '../components/Icons.tsx'
 import { MarkdownView } from '../components/MarkdownView.tsx'
 
 interface DiaryViewProps {
   snapshot: BoardSnapshot
   defaultDate: string
   onOpenFile: (relPath: string) => void
-  onRunAction: (action: () => Promise<unknown>, toastText?: string) => Promise<void>
+  onRunAction: RunActionFn
 }
 
 export function DiaryView({
@@ -43,33 +45,21 @@ export function DiaryView({
     e?.preventDefault()
     const trimmed = draft.trim()
     if (!trimmed) return
-    await onRunAction(async () => {
-      await api.appendDiary(trimmed, writeDate)
-      setDraft('')
-    }, `已追加到 ${writeDate} 日记`)
+    setDraft('')
+    await onRunAction(() => api.appendDiary(trimmed, writeDate))
   }
 
   return (
-    <div className="lw-container">
-      {/* Quick Write Card */}
-      <form className="lw-card lw-stack" onSubmit={(e) => void handleSubmit(e)}>
-        <div className="lw-between">
-          <div className="lw-row">
-            <h3 className="lw-card-title">写一笔日记</h3>
-            <input
-              type="date"
-              className="lw-input"
-              style={{ width: 150, padding: '4px 8px' }}
-              value={writeDate}
-              onChange={(e) => {
-                if (e.target.value) setWriteDate(e.target.value)
-              }}
-            />
-          </div>
-          <span className="lw-muted">存放在 raw/me/diary/ · 支持 Ctrl+Enter 提交</span>
-        </div>
+    <div className="lw-canvas">
+      {/* Minimal Writing Area */}
+      <form
+        className="lw-surface-box lw-stack"
+        style={{ gap: 10 }}
+        onSubmit={(e) => void handleSubmit(e)}
+      >
         <textarea
-          className="lw-textarea"
+          className="lw-inline-input"
+          style={{ minHeight: 68, resize: 'vertical', lineHeight: 1.7 }}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
@@ -78,37 +68,44 @@ export function DiaryView({
               void handleSubmit()
             }
           }}
-          placeholder="记录此刻的想法、发生的事或今天的状态…"
+          placeholder="写点什么…"
         />
         <div className="lw-between">
-          <span className="lw-muted">
-            每次追加会自动附上当前时间，不会覆盖当天已写内容。
-          </span>
+          <input
+            type="date"
+            className="lw-input"
+            style={{ width: 138, padding: '3px 8px', fontSize: 12.5, borderColor: 'transparent', background: 'var(--lw-subtle)' }}
+            value={writeDate}
+            onChange={(e) => {
+              if (e.target.value) setWriteDate(e.target.value)
+            }}
+          />
           <button
             type="submit"
-            className="lw-btn lw-btn-primary"
+            className="lw-btn lw-btn-sm lw-btn-primary"
             disabled={!draft.trim()}
           >
-            追加到日记
+            记录
           </button>
         </div>
       </form>
 
-      {/* Filters */}
-      <div className="lw-between">
-        <div className="lw-tabs">
+      {/* Clean Month Filter + Quiet Search */}
+      <div className="lw-between" style={{ alignItems: 'flex-end' }}>
+        <div className="lw-subtabs" style={{ flex: 1, overflowX: 'auto' }}>
           <button
             type="button"
-            className={`lw-tab ${selectedMonth === 'ALL' ? 'active' : ''}`}
+            className={`lw-subtab ${selectedMonth === 'ALL' ? 'active' : ''}`}
             onClick={() => setSelectedMonth('ALL')}
           >
-            全部 ({snapshot.diaries.length})
+            全部
+            <span className="lw-muted">{snapshot.diaries.length}</span>
           </button>
-          {months.slice(0, 8).map((m) => (
+          {months.slice(0, 6).map((m) => (
             <button
               key={m}
               type="button"
-              className={`lw-tab ${selectedMonth === m ? 'active' : ''}`}
+              className={`lw-subtab ${selectedMonth === m ? 'active' : ''}`}
               onClick={() => setSelectedMonth(m)}
             >
               {m}
@@ -116,50 +113,56 @@ export function DiaryView({
           ))}
         </div>
 
-        <input
-          className="lw-input"
-          style={{ width: 220 }}
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="搜索日记内容或日期…"
-        />
+        <div className="lw-capture" style={{ width: 190, padding: '4px 10px' }}>
+          <IconSearch size={13} />
+          <input
+            className="lw-inline-input"
+            style={{ fontSize: 13, padding: '1px 0' }}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索"
+          />
+        </div>
       </div>
 
-      {/* Timeline */}
+      {/* Editorial Timeline */}
       {filtered.length === 0 ? (
         <div className="lw-empty">
-          {snapshot.diaries.length === 0
-            ? '还没有任何日记，在上方写下第一段吧。'
-            : '当前筛选条件下没有匹配的日记。'}
+          {snapshot.diaries.length === 0 ? '还没有日记' : '没有匹配的日记'}
         </div>
       ) : (
-        <div className="lw-stack" style={{ gap: 14 }}>
+        <div className="lw-stack" style={{ gap: 28 }}>
           {filtered.map((entry) => (
-            <div key={entry.relPath} className="lw-card">
-              <div className="lw-card-header">
-                <div className="lw-row">
-                  <h3 className="lw-card-title">{entry.date}</h3>
-                  {entry.entryCount > 0 && (
-                    <span className="lw-badge">{entry.entryCount} 条记录</span>
-                  )}
+            <article
+              key={entry.relPath}
+              className="lw-diary-entry lw-stack"
+              style={{ gap: 8, paddingBottom: 24, borderBottom: '1px solid var(--lw-border)' }}
+            >
+              <div className="lw-between">
+                <div className="lw-row" style={{ gap: 10 }}>
+                  <h2 style={{ fontSize: 16, fontWeight: 650, margin: 0, letterSpacing: '-0.015em' }}>
+                    {entry.date}
+                  </h2>
                   {entry.images.length > 0 && (
-                    <span className="lw-badge lw-badge-info">
-                      含 {entry.images.length} 张配图
-                    </span>
+                    <span className="lw-muted">{entry.images.length} 图</span>
                   )}
                 </div>
-                <button
-                  type="button"
-                  className="lw-btn lw-btn-sm lw-btn-ghost"
-                  onClick={() => onOpenFile(entry.relPath)}
-                >
-                  编辑原文
-                </button>
+                <div className="lw-hover-actions">
+                  <button
+                    type="button"
+                    className="lw-icon-btn"
+                    title="编辑原文"
+                    onClick={() => onOpenFile(entry.relPath)}
+                  >
+                    <IconFile size={14} />
+                  </button>
+                </div>
               </div>
 
               <MarkdownView
                 content={entry.content}
                 baseRelPath={entry.relPath}
+                hideFrontmatter
                 onOpenImage={(src) => setLightboxSrc(src)}
               />
 
@@ -179,17 +182,13 @@ export function DiaryView({
                   })}
                 </div>
               )}
-            </div>
+            </article>
           ))}
         </div>
       )}
 
-      {/* Lightbox */}
       {lightboxSrc && (
-        <div
-          className="lw-backdrop lw-backdrop-center"
-          onClick={() => setLightboxSrc(null)}
-        >
+        <div className="lw-backdrop lw-backdrop-center" onClick={() => setLightboxSrc(null)}>
           <img
             src={lightboxSrc}
             alt="预览"

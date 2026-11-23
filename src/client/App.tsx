@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import type { BoardSnapshot, VaultSettings } from '../shared/types.ts'
 import { api } from './api.ts'
+import { IconGit, IconInbox, IconRefresh, IconSettings } from './components/Icons.tsx'
 import { ensureStyles } from './styles.ts'
 import { DiaryView } from './views/DiaryView.tsx'
 import { FileDrawer } from './views/FileDrawer.tsx'
@@ -12,7 +13,16 @@ import { ReviewView } from './views/ReviewView.tsx'
 import { SettingsModal } from './views/SettingsModal.tsx'
 import { TodayView } from './views/TodayView.tsx'
 
-type MainTab = 'today' | 'projects' | 'diary' | 'review' | 'knowledge'
+export type MainTab = 'today' | 'projects' | 'diary' | 'review' | 'knowledge'
+
+export type RunActionFn = (
+  action: () => Promise<unknown>,
+  opts?: {
+    toast?: string
+    optimistic?: (prev: BoardSnapshot) => BoardSnapshot
+    reloadSettings?: boolean
+  },
+) => Promise<void>
 
 function localTodayIso(): string {
   const d = new Date()
@@ -54,7 +64,7 @@ export function LifeWikiApp() {
   const [theme, setTheme] = useState<'light' | 'dark'>(() => detectHostTheme())
   const [settings, setSettings] = useState<VaultSettings | null>(null)
   const [snapshot, setSnapshot] = useState<BoardSnapshot | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [switchingVault, setSwitchingVault] = useState(false)
 
@@ -67,16 +77,20 @@ export function LifeWikiApp() {
   const [drawerFile, setDrawerFile] = useState<string | null>(null)
   const [toast, setToast] = useState<{ text: string; isError: boolean } | null>(null)
 
+  const snapshotRef = useRef<BoardSnapshot | null>(null)
+  snapshotRef.current = snapshot
+
   const showToast = useCallback((text: string, isError = false) => {
     setToast({ text, isError })
   }, [])
 
   useEffect(() => {
     if (!toast) return
-    const t = setTimeout(() => setToast(null), 3200)
+    const t = setTimeout(() => setToast(null), 2600)
     return () => clearTimeout(t)
   }, [toast])
 
+  // Sync light/dark theme with DSH host
   useEffect(() => {
     if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') return
     const sync = () => setTheme(detectHostTheme())
@@ -95,44 +109,74 @@ export function LifeWikiApp() {
     return () => obs.disconnect()
   }, [])
 
-  const loadAll = useCallback(
-    async (dateArg = selectedDate, weekArg = selectedWeek) => {
-      setLoading(true)
-      setError(null)
+  // Esc key closes topmost overlay
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (drawerFile) {
+        e.preventDefault()
+        setDrawerFile(null)
+      } else if (inboxOpen) {
+        e.preventDefault()
+        setInboxOpen(false)
+      } else if (settingsOpen) {
+        e.preventDefault()
+        setSettingsOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [drawerFile, inboxOpen, settingsOpen])
+
+  const fetchSnapshot = useCallback(
+    async (dateArg: string, weekArg: string | undefined, withSettings: boolean) => {
       try {
-        const s = await api.getSettings()
-        setSettings(s)
-        if (!s.dataDir) {
-          setSnapshot(null)
-          return
+        if (withSettings) {
+          const s = await api.getSettings()
+          setSettings(s)
+          if (!s.dataDir) {
+            setSnapshot(null)
+            setError(null)
+            return
+          }
         }
         const snap = await api.getSnapshot(dateArg, weekArg)
         setSnapshot(snap)
+        setError(null)
         if (!weekArg) setSelectedWeek(snap.reviewCenter.week)
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err))
       } finally {
-        setLoading(false)
+        setInitialLoading(false)
       }
     },
-    [selectedDate, selectedWeek],
+    [],
   )
 
+  // Initial load
   useEffect(() => {
-    void loadAll(selectedDate, selectedWeek)
-  }, [loadAll, selectedDate, selectedWeek])
+    void fetchSnapshot(selectedDate, selectedWeek, true)
+  }, [fetchSnapshot, selectedDate, selectedWeek])
 
-  const runAction = useCallback(
-    async (action: () => Promise<unknown>, toastText?: string) => {
+  const runAction: RunActionFn = useCallback(
+    async (action, opts) => {
+      const prev = snapshotRef.current
+      if (opts?.optimistic && prev) {
+        setSnapshot(opts.optimistic(prev))
+      }
       try {
         await action()
-        await loadAll(selectedDate, selectedWeek)
-        if (toastText) showToast(toastText)
+        await fetchSnapshot(selectedDate, selectedWeek, Boolean(opts?.reloadSettings))
+        if (opts?.toast) showToast(opts.toast)
       } catch (err) {
+        if (opts?.optimistic && prev) {
+          setSnapshot(prev)
+        }
         showToast(err instanceof Error ? err.message : String(err), true)
       }
     },
-    [loadAll, selectedDate, selectedWeek, showToast],
+    [fetchSnapshot, selectedDate, selectedWeek, showToast],
   )
 
   const handleCommitSnapshot = async () => {
@@ -146,156 +190,141 @@ export function LifeWikiApp() {
     ? snapshot.inbox.items.filter((i) => !i.checked).length
     : 0
 
-  const showOnboarding = !loading && settings && (!settings.dataDir || switchingVault)
+  const showOnboarding = !initialLoading && settings && (!settings.dataDir || switchingVault)
 
   return (
     <div className="lw-root" data-lw-theme={theme}>
-      {/* Top Navigation Bar */}
+      {/* Calm 3-column Header */}
       <header className="lw-header">
         <div className="lw-brand">
-          <span className="lw-brand-title">Life Wiki</span>
+          <span className="lw-brand-name">Life Wiki</span>
           {snapshot && !switchingVault && (
-            <button
-              type="button"
-              className="lw-vault-pill"
-              title={`当前库：${snapshot.vaultRoot}（点击切换）`}
-              onClick={() => setSettingsOpen(true)}
-            >
-              <span>📁</span>
-              <span>{snapshot.vaultName}</span>
-            </button>
+            <>
+              <span className="lw-brand-sep">/</span>
+              <button
+                type="button"
+                className="lw-vault-btn"
+                title={snapshot.vaultRoot}
+                onClick={() => setSettingsOpen(true)}
+              >
+                {snapshot.vaultName}
+              </button>
+            </>
           )}
         </div>
 
-        {snapshot && !showOnboarding && (
-          <>
-            <nav className="lw-nav" aria-label="主导航">
-              {(
-                [
-                  ['today', '今日'],
-                  ['projects', '项目'],
-                  ['diary', '日记'],
-                  ['review', '复盘'],
-                  ['knowledge', '知识库'],
-                ] as Array<[MainTab, string]>
-              ).map(([key, label]) => (
-                <button
-                  key={key}
-                  type="button"
-                  className={`lw-nav-btn ${activeTab === key ? 'active' : ''}`}
-                  onClick={() => setActiveTab(key)}
-                >
-                  {label}
-                </button>
-              ))}
-            </nav>
+        {snapshot && !showOnboarding ? (
+          <nav className="lw-nav" aria-label="主导航">
+            {(
+              [
+                ['today', '今日'],
+                ['projects', '项目'],
+                ['diary', '日记'],
+                ['review', '复盘'],
+                ['knowledge', '知识库'],
+              ] as Array<[MainTab, string]>
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`lw-nav-item ${activeTab === key ? 'active' : ''}`}
+                onClick={() => setActiveTab(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        ) : (
+          <div />
+        )}
 
-            <div className="lw-actions">
+        <div className="lw-header-right">
+          {snapshot && !showOnboarding && (
+            <>
               <button
                 type="button"
-                className="lw-btn lw-btn-sm"
+                className="lw-icon-btn"
+                title="收件箱"
                 onClick={() => setInboxOpen(true)}
               >
-                收件箱
-                {pendingInboxCount > 0 && (
-                  <span className="lw-count-dot">{pendingInboxCount}</span>
-                )}
+                <IconInbox size={15} />
+                {pendingInboxCount > 0 && <span className="lw-num">{pendingInboxCount}</span>}
               </button>
 
               {snapshot.git.isRepo && (
                 <button
                   type="button"
-                  className="lw-btn lw-btn-sm"
+                  className="lw-icon-btn"
                   title={
                     snapshot.git.dirtyCount > 0
-                      ? `有 ${snapshot.git.dirtyCount} 处本地改动，点击提交 Git 快照`
-                      : '当前工作区干净'
+                      ? `提交 Git 快照（${snapshot.git.dirtyCount} 处改动）`
+                      : '本地 Git 已同步'
                   }
                   onClick={() => void handleCommitSnapshot()}
                 >
-                  快照{snapshot.git.dirtyCount > 0 ? ` (${snapshot.git.dirtyCount})` : ''}
+                  <IconGit size={15} />
+                  {snapshot.git.dirtyCount > 0 && <span className="lw-dot" />}
                 </button>
               )}
 
               <button
                 type="button"
-                className="lw-btn lw-btn-sm lw-btn-ghost"
-                onClick={() => void loadAll(selectedDate, selectedWeek)}
-                title="重新读取本地文件"
+                className="lw-icon-btn"
+                title="刷新本地文件"
+                onClick={() => void fetchSnapshot(selectedDate, selectedWeek, false)}
               >
-                刷新
+                <IconRefresh size={14} />
               </button>
 
               <button
                 type="button"
-                className="lw-btn lw-btn-sm lw-btn-ghost"
+                className="lw-icon-btn"
+                title="设置"
                 onClick={() => setSettingsOpen(true)}
               >
-                设置
+                <IconSettings size={15} />
               </button>
-            </div>
-          </>
-        )}
+            </>
+          )}
+        </div>
       </header>
 
-      {/* Body */}
-      {loading && !snapshot && !settings ? (
+      {/* Main Content */}
+      {initialLoading && !snapshot ? (
         <div className="lw-onboard-wrap">
-          <div className="lw-muted">正在加载 Life Wiki…</div>
+          <div className="lw-muted">加载中…</div>
         </div>
       ) : showOnboarding && settings ? (
         <OnboardingView
           settings={settings}
           canCancel={Boolean(settings.dataDir)}
           onCancel={() => setSwitchingVault(false)}
-          onVaultReady={async (msg) => {
+          onVaultReady={async () => {
             setSwitchingVault(false)
             setSelectedWeek(undefined)
-            await loadAll(selectedDate, undefined)
-            showToast(msg)
+            await fetchSnapshot(selectedDate, undefined, true)
           }}
         />
       ) : error && !snapshot ? (
         <div className="lw-onboard-wrap">
           <div className="lw-onboard-card">
-            <div className="lw-banner lw-banner-warn">{error}</div>
+            <div style={{ color: 'var(--lw-danger)', fontSize: 13.5 }}>{error}</div>
             <div className="lw-row">
               <button
                 type="button"
                 className="lw-btn lw-btn-primary"
-                onClick={() => void loadAll(selectedDate, selectedWeek)}
+                onClick={() => void fetchSnapshot(selectedDate, selectedWeek, true)}
               >
                 重试
               </button>
-              <button
-                type="button"
-                className="lw-btn"
-                onClick={() => setSwitchingVault(true)}
-              >
-                重新选择目录
+              <button type="button" className="lw-btn" onClick={() => setSwitchingVault(true)}>
+                切换目录
               </button>
             </div>
           </div>
         </div>
       ) : snapshot ? (
         <main className="lw-main">
-          {snapshot.hasSampleData && (
-            <div className="lw-container" style={{ marginBottom: 14 }}>
-              <div className="lw-banner lw-banner-accent">
-                <span>
-                  当前库带有示例项目与示例笔记，帮你熟悉工作流。用顺手后可以随时一键清空示例（保留你自己写的内容）。
-                </span>
-                <button
-                  type="button"
-                  className="lw-btn lw-btn-sm"
-                  onClick={() => setSettingsOpen(true)}
-                >
-                  去清空示例
-                </button>
-              </div>
-            </div>
-          )}
-
           {activeTab === 'today' && (
             <TodayView
               snapshot={snapshot}
@@ -348,7 +377,6 @@ export function LifeWikiApp() {
         </main>
       ) : null}
 
-      {/* Drawers & Modals */}
       {inboxOpen && snapshot && (
         <InboxDrawer
           snapshot={snapshot}
@@ -363,7 +391,7 @@ export function LifeWikiApp() {
         <FileDrawer
           relPath={drawerFile}
           onClose={() => setDrawerFile(null)}
-          onSaved={() => loadAll(selectedDate, selectedWeek)}
+          onSaved={() => fetchSnapshot(selectedDate, selectedWeek, false)}
           onToast={showToast}
         />
       )}

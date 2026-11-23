@@ -1,13 +1,15 @@
 import React, { useState } from 'react'
 import type { BoardSnapshot } from '../../shared/types.ts'
+import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
+import { IconCheck, IconFile, IconX } from '../components/Icons.tsx'
 
 interface InboxDrawerProps {
   snapshot: BoardSnapshot
   selectedDate: string
   onClose: () => void
   onOpenFile: (relPath: string) => void
-  onRunAction: (action: () => Promise<unknown>, toastText?: string) => Promise<void>
+  onRunAction: RunActionFn
 }
 
 export function InboxDrawer({
@@ -32,135 +34,142 @@ export function InboxDrawer({
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!newText.trim()) return
-    await onRunAction(async () => {
-      await api.addInboxItem(newText.trim(), selectedDate)
-      setNewText('')
-    }, '已记入收件箱')
+    const text = newText.trim()
+    if (!text) return
+    setNewText('')
+    await onRunAction(() => api.addInboxItem(text, selectedDate), {
+      optimistic: (prev) => ({
+        ...prev,
+        inbox: {
+          ...prev.inbox,
+          items: [
+            ...prev.inbox.items,
+            { lineIndex: -Date.now(), checked: false, text, rawLine: `- [ ] ${text}` },
+          ],
+        },
+      }),
+    })
+  }
+
+  const handleToggle = async (lineIndex: number) => {
+    await onRunAction(() => api.toggleInboxItem(lineIndex), {
+      optimistic: (prev) => ({
+        ...prev,
+        inbox: {
+          ...prev.inbox,
+          items: prev.inbox.items.map((i) =>
+            i.lineIndex === lineIndex ? { ...i, checked: !i.checked } : i,
+          ),
+        },
+      }),
+    })
+  }
+
+  const handleDelete = async (lineIndex: number) => {
+    await onRunAction(() => api.deleteInboxItem(lineIndex), {
+      optimistic: (prev) => ({
+        ...prev,
+        inbox: {
+          ...prev.inbox,
+          items: prev.inbox.items.filter((i) => i.lineIndex !== lineIndex),
+        },
+      }),
+    })
   }
 
   return (
     <div className="lw-backdrop" onClick={onClose}>
       <div className="lw-drawer lw-drawer-sm" onClick={(e) => e.stopPropagation()}>
         <div className="lw-panel-header">
-          <div className="lw-row">
-            <strong>收件箱</strong>
-            <span className="lw-badge lw-badge-accent">{pending.length} 待处理</span>
+          <div className="lw-row" style={{ gap: 8 }}>
+            <strong style={{ fontSize: 15 }}>收件箱</strong>
+            {pending.length > 0 && <span className="lw-muted">{pending.length}</span>}
           </div>
-          <div className="lw-row">
+          <div className="lw-row" style={{ gap: 2 }}>
             <button
               type="button"
-              className="lw-btn lw-btn-sm lw-btn-ghost"
+              className="lw-icon-btn"
+              title="打开 inbox.md"
               onClick={() => {
                 onClose()
                 onOpenFile(snapshot.inbox.relPath)
               }}
             >
-              打开原文
+              <IconFile size={14} />
             </button>
-            <button type="button" className="lw-btn lw-btn-sm" onClick={onClose}>
-              关闭
+            <button type="button" className="lw-icon-btn" onClick={onClose}>
+              <IconX />
             </button>
           </div>
         </div>
 
-        <div className="lw-panel-body lw-stack" style={{ gap: 14 }}>
-          <form className="lw-row" onSubmit={(e) => void handleAdd(e)}>
+        <div className="lw-panel-body lw-stack" style={{ gap: 16 }}>
+          <form className="lw-capture" onSubmit={(e) => void handleAdd(e)}>
             <input
-              className="lw-input"
-              style={{ flex: 1 }}
+              className="lw-inline-input"
+              style={{ padding: '2px 0' }}
               value={newText}
               onChange={(e) => setNewText(e.target.value)}
-              placeholder="随手记一句，回头再分流…"
+              placeholder="随手记一条，回车保存…"
               autoFocus
             />
-            <button
-              type="submit"
-              className="lw-btn lw-btn-primary lw-btn-sm"
-              disabled={!newText.trim()}
-            >
-              记下
-            </button>
           </form>
 
           {pending.length === 0 ? (
-            <div className="lw-muted" style={{ textAlign: 'center', padding: '24px 8px' }}>
-              收件箱已清空
-            </div>
+            <div className="lw-empty">收件箱已清空</div>
           ) : (
-            <div className="lw-stack" style={{ gap: 8 }}>
+            <div className="lw-list">
               {pending.map((item) => (
-                <div
-                  key={item.lineIndex}
-                  style={{
-                    padding: '9px 11px',
-                    borderRadius: 8,
-                    border: '1px solid var(--lw-border)',
-                    background: 'var(--lw-bg)',
-                  }}
-                  className="lw-stack"
-                >
-                  <div className="lw-row" style={{ alignItems: 'flex-start', flexWrap: 'nowrap' }}>
-                    <input
-                      type="checkbox"
-                      checked={false}
-                      style={{ marginTop: 3, accentColor: 'var(--lw-accent)' }}
-                      onChange={() =>
-                        void onRunAction(() => api.toggleInboxItem(item.lineIndex))
-                      }
+                <div key={item.lineIndex} className="lw-stack" style={{ gap: 4 }}>
+                  <div className="lw-item-row">
+                    <button
+                      type="button"
+                      className="lw-check"
+                      onClick={() => void handleToggle(item.lineIndex)}
                     />
-                    <div className="lw-task-text" style={{ fontSize: 13.5 }}>
-                      {item.text}
+                    <div className="lw-item-title">{item.text}</div>
+                    <div className="lw-hover-actions">
+                      <button
+                        type="button"
+                        className="lw-btn lw-btn-sm lw-btn-ghost"
+                        onClick={() =>
+                          void onRunAction(() => api.inboxToIdea(item.lineIndex), {
+                            toast: '已转为想法',
+                          })
+                        }
+                      >
+                        想法
+                      </button>
+                      {activeProjects.length > 0 && (
+                        <button
+                          type="button"
+                          className="lw-btn lw-btn-sm lw-btn-ghost"
+                          onClick={() => {
+                            setTaskPickerLine(
+                              taskPickerLine === item.lineIndex ? null : item.lineIndex,
+                            )
+                            if (!targetProject && activeProjects[0]) {
+                              setTargetProject(activeProjects[0].name)
+                            }
+                          }}
+                        >
+                          任务
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="lw-icon-btn"
+                        style={{ height: 24, minWidth: 24 }}
+                        title="删除"
+                        onClick={() => void handleDelete(item.lineIndex)}
+                      >
+                        <IconX size={13} />
+                      </button>
                     </div>
                   </div>
 
-                  <div className="lw-row" style={{ paddingLeft: 22 }}>
-                    <button
-                      type="button"
-                      className="lw-btn lw-btn-sm"
-                      onClick={() =>
-                        void onRunAction(
-                          async () => {
-                            await api.inboxToIdea(item.lineIndex)
-                          },
-                          '已转为想法（写入 projects/00_ideas/）',
-                        )
-                      }
-                    >
-                      转为想法
-                    </button>
-                    {activeProjects.length > 0 && (
-                      <button
-                        type="button"
-                        className="lw-btn lw-btn-sm"
-                        onClick={() => {
-                          setTaskPickerLine(
-                            taskPickerLine === item.lineIndex ? null : item.lineIndex,
-                          )
-                          if (!targetProject && activeProjects[0]) {
-                            setTargetProject(activeProjects[0].name)
-                          }
-                        }}
-                      >
-                        转今日任务
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      className="lw-btn lw-btn-sm lw-btn-ghost"
-                      onClick={() =>
-                        void onRunAction(
-                          () => api.deleteInboxItem(item.lineIndex),
-                          '已删除收件箱条目',
-                        )
-                      }
-                    >
-                      删除
-                    </button>
-                  </div>
-
                   {taskPickerLine === item.lineIndex && activeProjects.length > 0 && (
-                    <div className="lw-row" style={{ paddingLeft: 22 }}>
+                    <div className="lw-row" style={{ padding: '0 0 8px 28px' }}>
                       <select
                         className="lw-select"
                         style={{ flex: 1, padding: '4px 8px', fontSize: 12.5 }}
@@ -178,13 +187,16 @@ export function InboxDrawer({
                         className="lw-btn lw-btn-sm lw-btn-primary"
                         disabled={!targetProject}
                         onClick={() =>
-                          void onRunAction(async () => {
-                            await api.inboxToTask(item.lineIndex, targetProject, selectedDate)
-                            setTaskPickerLine(null)
-                          }, `已转入「${targetProject}」今日任务`)
+                          void onRunAction(
+                            async () => {
+                              await api.inboxToTask(item.lineIndex, targetProject, selectedDate)
+                              setTaskPickerLine(null)
+                            },
+                            { toast: `已转入「${targetProject}」` },
+                          )
                         }
                       >
-                        确认转入
+                        转入
                       </button>
                     </div>
                   )}
@@ -194,53 +206,51 @@ export function InboxDrawer({
           )}
 
           {done.length > 0 && (
-            <div className="lw-stack" style={{ gap: 6 }}>
+            <div className="lw-stack" style={{ gap: 4 }}>
               <button
                 type="button"
                 className="lw-btn lw-btn-sm lw-btn-ghost"
-                style={{ alignSelf: 'flex-start' }}
+                style={{ alignSelf: 'flex-start', paddingLeft: 2 }}
                 onClick={() => setShowDone((v) => !v)}
               >
-                {showDone ? '收起' : '显示'}已处理 ({done.length})
+                {showDone ? '收起' : '已处理'} ({done.length})
               </button>
               {showDone &&
                 done.map((item) => (
-                  <div key={item.lineIndex} className="lw-task-item">
-                    <input
-                      type="checkbox"
-                      checked
-                      onChange={() =>
-                        void onRunAction(() => api.toggleInboxItem(item.lineIndex))
-                      }
-                    />
-                    <span className="lw-task-text lw-task-done" style={{ fontSize: 13 }}>
-                      {item.text}
-                    </span>
+                  <div key={item.lineIndex} className="lw-item-row">
                     <button
                       type="button"
-                      className="lw-btn lw-btn-sm lw-btn-ghost"
-                      onClick={() =>
-                        void onRunAction(() => api.deleteInboxItem(item.lineIndex))
-                      }
+                      className="lw-check checked"
+                      onClick={() => void handleToggle(item.lineIndex)}
                     >
-                      删
+                      <IconCheck />
                     </button>
+                    <span className="lw-item-title lw-item-done" style={{ fontSize: 13 }}>
+                      {item.text}
+                    </span>
+                    <div className="lw-hover-actions">
+                      <button
+                        type="button"
+                        className="lw-icon-btn"
+                        style={{ height: 24, minWidth: 24 }}
+                        onClick={() => void handleDelete(item.lineIndex)}
+                      >
+                        <IconX size={13} />
+                      </button>
+                    </div>
                   </div>
                 ))}
             </div>
           )}
 
           {snapshot.inbox.proposals.length > 0 && (
-            <div className="lw-stack" style={{ gap: 6 }}>
-              <div className="lw-divider" />
-              <div className="lw-muted" style={{ fontWeight: 600 }}>
-                待确认提议
-              </div>
-              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13 }}>
-                {snapshot.inbox.proposals.map((p, idx) => (
-                  <li key={idx}>{p}</li>
-                ))}
-              </ul>
+            <div className="lw-stack" style={{ gap: 6, paddingTop: 8, borderTop: '1px solid var(--lw-border)' }}>
+              <div className="lw-muted">待确认</div>
+              {snapshot.inbox.proposals.map((p, idx) => (
+                <div key={idx} style={{ fontSize: 13, color: 'var(--lw-text-2)' }}>
+                  · {p}
+                </div>
+              ))}
             </div>
           )}
         </div>

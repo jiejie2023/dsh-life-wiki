@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.ts'
+import { IconX } from '../components/Icons.tsx'
 import { MarkdownView } from '../components/MarkdownView.tsx'
 
 interface FileDrawerProps {
@@ -51,7 +52,7 @@ export function FileDrawer({ relPath, onClose, onSaved, onToast }: FileDrawerPro
       setContent(draft)
       setEditing(false)
       await onSaved()
-      onToast('文件已保存')
+      onToast('已保存')
     } catch (err) {
       onToast(err instanceof Error ? err.message : String(err), true)
     } finally {
@@ -59,46 +60,28 @@ export function FileDrawer({ relPath, onClose, onSaved, onToast }: FileDrawerPro
     }
   }
 
-  const handleCopyPath = async () => {
-    try {
-      await navigator.clipboard.writeText(relPath)
-      onToast('已复制路径')
-    } catch {
-      onToast(relPath)
-    }
-  }
-
   return (
     <div className="lw-backdrop" onClick={onClose}>
       <div className="lw-drawer" onClick={(e) => e.stopPropagation()}>
         <div className="lw-panel-header">
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div
-              className="lw-mono"
-              style={{
-                fontSize: 12.5,
-                fontWeight: 600,
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              }}
-              title={relPath}
-            >
-              {relPath}
-            </div>
+          <div
+            className="lw-mono lw-meta"
+            style={{
+              minWidth: 0,
+              flex: 1,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={relPath}
+          >
+            {relPath}
           </div>
-          <div className="lw-row">
-            <button
-              type="button"
-              className="lw-btn lw-btn-sm lw-btn-ghost"
-              onClick={() => void handleCopyPath()}
-            >
-              复制路径
-            </button>
+          <div className="lw-row" style={{ gap: 6 }}>
             {!loading && !error && (
               <button
                 type="button"
-                className={`lw-btn lw-btn-sm ${editing ? '' : 'lw-btn-primary'}`}
+                className={`lw-btn lw-btn-sm ${editing ? 'lw-btn-ghost' : ''}`}
                 onClick={() => {
                   if (editing) {
                     setDraft(content)
@@ -108,24 +91,24 @@ export function FileDrawer({ relPath, onClose, onSaved, onToast }: FileDrawerPro
                   }
                 }}
               >
-                {editing ? '取消编辑' : '编辑原文'}
+                {editing ? '取消' : '编辑'}
               </button>
             )}
-            <button type="button" className="lw-btn lw-btn-sm" onClick={onClose}>
-              关闭
+            <button type="button" className="lw-icon-btn" onClick={onClose}>
+              <IconX />
             </button>
           </div>
         </div>
 
         <div className="lw-panel-body">
           {loading ? (
-            <div className="lw-muted">读取文件中…</div>
+            <div className="lw-muted">读取中…</div>
           ) : error ? (
-            <div className="lw-banner lw-banner-warn">{error}</div>
+            <div style={{ color: 'var(--lw-danger)', fontSize: 13.5 }}>{error}</div>
           ) : editing ? (
             <textarea
               className="lw-textarea lw-mono"
-              style={{ height: '100%', minHeight: 420, fontSize: 13 }}
+              style={{ height: '100%', minHeight: 460, fontSize: 13, border: 'none', padding: 0 }}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
@@ -148,25 +131,15 @@ export function FileDrawer({ relPath, onClose, onSaved, onToast }: FileDrawerPro
         {editing && (
           <div className="lw-panel-footer">
             <span className="lw-muted" style={{ marginRight: 'auto' }}>
-              {dirty ? '有未保存修改 · 按 Ctrl+S 保存' : '内容未改动'}
+              {dirty ? 'Ctrl+S 保存' : ''}
             </span>
             <button
               type="button"
-              className="lw-btn"
-              onClick={() => {
-                setDraft(content)
-                setEditing(false)
-              }}
-            >
-              放弃修改
-            </button>
-            <button
-              type="button"
-              className="lw-btn lw-btn-primary"
+              className="lw-btn lw-btn-sm lw-btn-primary"
               disabled={saving || !dirty}
               onClick={() => void handleSave()}
             >
-              {saving ? '保存中…' : '保存文件'}
+              {saving ? '保存中…' : '保存'}
             </button>
           </div>
         )}
