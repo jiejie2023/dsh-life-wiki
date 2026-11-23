@@ -888,51 +888,15 @@ const CSS = `
   color: var(--lw-text);
 }
 
-/* Borderless editorial subsections (Log & Reflection) */
-.lw-subsec {
-  margin-top: 6px;
-  padding: 2px 0 4px 14px;
-  border-left: 2px solid var(--lw-border-strong);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  animation: lwFadeIn 0.15s ease-out;
-}
-
-.lw-subsec.reflection {
-  border-left-color: var(--lw-accent);
-}
-
-.lw-subsec-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--lw-muted);
-  line-height: 1.3;
-}
-
-.lw-subsec.reflection .lw-subsec-title {
-  color: var(--lw-accent-text);
-}
-
-.lw-subsec-item {
-  font-size: 13.5px;
-  line-height: 1.65;
-  color: var(--lw-text-2);
-  word-break: break-word;
-}
-
-.lw-subsec.reflection .lw-subsec-item {
-  color: var(--lw-text);
-}
-
-.lw-subsec-add {
-  display: flex;
+/* Project-level peer mode switcher (任务 / 日志 / 反思) */
+.lw-mode-tabs {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  color: var(--lw-muted);
+  gap: 2px;
+  margin-right: 6px;
 }
 
-.lw-head-link {
+.lw-mode-tab {
   appearance: none;
   border: none;
   background: transparent;
@@ -940,24 +904,42 @@ const CSS = `
   font-size: 12.5px;
   font-weight: 500;
   height: 26px;
-  padding: 0 7px;
+  padding: 0 8px;
   border-radius: 6px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
   cursor: pointer;
   transition: background 0.14s, color 0.14s;
 }
 
-.lw-head-link:hover {
+.lw-mode-tab:hover {
+  color: var(--lw-text-2);
   background: var(--lw-hover);
-  color: var(--lw-text);
 }
 
-.lw-head-link.active {
+.lw-mode-tab.active {
   color: var(--lw-text);
   font-weight: 600;
-  background: var(--lw-hover);
+  background: var(--lw-hover-strong);
+}
+
+.lw-bullet-slot {
+  width: 17px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--lw-muted);
+  flex-shrink: 0;
+}
+
+.lw-bullet-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--lw-border-strong);
+}
+
+.lw-bullet-dot.reflection {
+  background: var(--lw-accent);
 }
 
 /* Diary photos */

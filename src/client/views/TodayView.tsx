@@ -78,8 +78,7 @@ export function TodayView({
   const [durationOpenKey, setDurationOpenKey] = useState<string | null>(null)
   const [customMinutes, setCustomMinutes] = useState('')
   const [statusMenuProject, setStatusMenuProject] = useState<string | null>(null)
-  const [expandedLog, setExpandedLog] = useState<Record<string, boolean>>({})
-  const [expandedReflection, setExpandedReflection] = useState<Record<string, boolean>>({})
+  const [projectMode, setProjectMode] = useState<Record<string, 'task' | 'log' | 'reflection'>>({})
   const [logInputs, setLogInputs] = useState<Record<string, string>>({})
   const [reflectionInputs, setReflectionInputs] = useState<Record<string, string>>({})
   const [revealedProjects, setRevealedProjects] = useState<Record<string, boolean>>({})
@@ -284,20 +283,28 @@ export function TodayView({
     } else {
       setReflectionInputs((prev) => ({ ...prev, [group.projectName]: '' }))
     }
-    await onRunAction(() => api.appendTaskEntry(group.fileRelPath, section, text), {
-      optimistic: (prev) => ({
-        ...prev,
-        today: {
-          ...prev.today,
-          groups: prev.today.groups.map((g) => {
-            if (g.fileRelPath !== group.fileRelPath) return g
-            return section === 'log'
-              ? { ...g, logs: [...g.logs, text] }
-              : { ...g, reflections: [...g.reflections, text] }
-          }),
-        },
-      }),
-    })
+    await onRunAction(
+      async () => {
+        const rel = group.exists
+          ? group.fileRelPath
+          : (await api.createTaskFile(group.projectName, selectedDate)).relPath
+        await api.appendTaskEntry(rel, section, text)
+      },
+      {
+        optimistic: (prev) => ({
+          ...prev,
+          today: {
+            ...prev.today,
+            groups: prev.today.groups.map((g) => {
+              if (g.projectName !== group.projectName) return g
+              return section === 'log'
+                ? { ...g, exists: true, logs: [...g.logs, text] }
+                : { ...g, exists: true, reflections: [...g.reflections, text] }
+            }),
+          },
+        }),
+      },
+    )
   }
 
   return (
@@ -430,8 +437,7 @@ export function TodayView({
       ) : (
         <div className="lw-stack" style={{ gap: 28 }}>
           {activeGroups.map((group) => {
-            const logOpen = Boolean(expandedLog[group.projectName])
-            const refOpen = Boolean(expandedReflection[group.projectName])
+            const mode = projectMode[group.projectName] ?? 'task'
             const curStatus: TaskFileStatus = group.status ?? 'doing'
             const curStatusLabel =
               TASK_STATUS_OPTIONS.find((o) => o.value === curStatus)?.label ?? '进行中'
@@ -449,250 +455,243 @@ export function TodayView({
                     )}
                   </div>
 
-                  {group.exists && (
-                    <div className="lw-row" style={{ gap: 2 }}>
-                      {/* Linear-style Status Dropdown */}
-                      <div className="lw-menu-wrap" data-status-menu>
+                  <div className="lw-row" style={{ gap: 2 }}>
+                    <div className="lw-mode-tabs" role="tablist">
+                      {(
+                        [
+                          ['task', '任务'],
+                          ['log', '日志'],
+                          ['reflection', '反思'],
+                        ] as const
+                      ).map(([key, label]) => (
                         <button
+                          key={key}
                           type="button"
-                          className={`lw-status-trigger ${menuOpen ? 'open' : ''}`}
+                          role="tab"
+                          aria-selected={mode === key}
+                          className={`lw-mode-tab ${mode === key ? 'active' : ''}`}
                           onClick={() =>
-                            setStatusMenuProject(menuOpen ? null : group.projectName)
+                            setProjectMode((prev) => ({ ...prev, [group.projectName]: key }))
                           }
                         >
-                          <span className={`lw-status-dot ${curStatus}`} />
-                          <span>{curStatusLabel}</span>
-                          <IconChevronDown size={12} />
+                          {label}
                         </button>
-
-                        {menuOpen && (
-                          <div className="lw-menu" role="menu">
-                            {TASK_STATUS_OPTIONS.map((opt) => (
-                              <button
-                                key={opt.value}
-                                type="button"
-                                role="menuitem"
-                                className={`lw-menu-item ${curStatus === opt.value ? 'active' : ''}`}
-                                onClick={() => void handleSelectStatus(group, opt.value)}
-                              >
-                                <span className={`lw-status-dot ${opt.value}`} />
-                                <span style={{ flex: 1 }}>{opt.label}</span>
-                                {curStatus === opt.value && <IconCheck size={12} />}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-
-                      <button
-                        type="button"
-                        className={`lw-head-link ${logOpen ? 'active' : ''}`}
-                        onClick={() =>
-                          setExpandedLog((prev) => ({
-                            ...prev,
-                            [group.projectName]: !logOpen,
-                          }))
-                        }
-                      >
-                        日志{group.logs.length > 0 ? ` ${group.logs.length}` : ''}
-                      </button>
-
-                      <button
-                        type="button"
-                        className={`lw-head-link ${refOpen ? 'active' : ''}`}
-                        onClick={() =>
-                          setExpandedReflection((prev) => ({
-                            ...prev,
-                            [group.projectName]: !refOpen,
-                          }))
-                        }
-                      >
-                        反思{group.reflections.length > 0 ? ` ${group.reflections.length}` : ''}
-                      </button>
-
-                      <button
-                        type="button"
-                        className="lw-icon-btn"
-                        style={{ height: 26, minWidth: 26 }}
-                        title="打开原文"
-                        onClick={() => onOpenFile(group.fileRelPath)}
-                      >
-                        <IconFile size={14} />
-                      </button>
+                      ))}
                     </div>
-                  )}
-                </div>
 
-                {/* Tasks List */}
-                <div className="lw-list">
-                  {group.tasks.map((task) => {
-                    const rowKey = `${group.fileRelPath}:${task.lineIndex}`
-                    const durOpen = durationOpenKey === rowKey
-                    const displayText = cleanTaskDisplayText(task.text, task.minutes !== null)
+                    {group.exists && (
+                      <>
+                        {/* Linear-style Status Dropdown */}
+                        <div className="lw-menu-wrap" data-status-menu>
+                          <button
+                            type="button"
+                            className={`lw-status-trigger ${menuOpen ? 'open' : ''}`}
+                            onClick={() =>
+                              setStatusMenuProject(menuOpen ? null : group.projectName)
+                            }
+                          >
+                            <span className={`lw-status-dot ${curStatus}`} />
+                            <span>{curStatusLabel}</span>
+                            <IconChevronDown size={12} />
+                          </button>
 
-                    const applyDuration = (mins: number | null) => {
-                      if (!task.checked && mins !== null) {
-                        void handleToggleTask(group, task.lineIndex, mins)
-                      } else {
-                        void handleSetMinutes(group, task.lineIndex, mins)
-                      }
-                    }
-
-                    return (
-                      <div key={task.lineIndex} className="lw-item-row">
-                        <button
-                          type="button"
-                          className={`lw-check ${task.checked ? 'checked' : ''}`}
-                          onClick={() => void handleToggleTask(group, task.lineIndex)}
-                          aria-label={task.checked ? '取消完成' : '标记完成'}
-                        >
-                          {task.checked && <IconCheck />}
-                        </button>
-
-                        <div className={`lw-item-title ${task.checked ? 'lw-item-done' : ''}`}>
-                          {displayText}
-                          {task.fromDate && (
-                            <span className="lw-muted" style={{ marginLeft: 8 }}>
-                              {task.fromDate}
-                            </span>
-                          )}
-                        </div>
-
-                        <div data-duration-menu>
-                          {durOpen ? (
-                            <form
-                              className="lw-popover-row"
-                              onSubmit={(e) => {
-                                e.preventDefault()
-                                const parsed = Number(customMinutes.trim())
-                                if (Number.isFinite(parsed) && parsed > 0) {
-                                  applyDuration(parsed)
-                                }
-                              }}
-                            >
-                              {[15, 30, 45, 60].map((m) => (
+                          {menuOpen && (
+                            <div className="lw-menu" role="menu">
+                              {TASK_STATUS_OPTIONS.map((opt) => (
                                 <button
-                                  key={m}
+                                  key={opt.value}
                                   type="button"
-                                  className="lw-pop-chip"
-                                  onClick={() => applyDuration(m)}
+                                  role="menuitem"
+                                  className={`lw-menu-item ${curStatus === opt.value ? 'active' : ''}`}
+                                  onClick={() => void handleSelectStatus(group, opt.value)}
                                 >
-                                  {m} min
+                                  <span className={`lw-status-dot ${opt.value}`} />
+                                  <span style={{ flex: 1 }}>{opt.label}</span>
+                                  {curStatus === opt.value && <IconCheck size={12} />}
                                 </button>
                               ))}
-                              <input
-                                className="lw-inline-input"
-                                style={{
-                                  width: 44,
-                                  fontSize: 12,
-                                  padding: '2px 4px',
-                                  textAlign: 'center',
-                                }}
-                                placeholder="min"
-                                value={customMinutes}
-                                onChange={(e) => setCustomMinutes(e.target.value)}
-                                autoFocus
-                              />
-                              {task.minutes !== null && (
-                                <button
-                                  type="button"
-                                  className="lw-pop-chip"
-                                  title="清除耗时"
-                                  onClick={() => applyDuration(null)}
-                                >
-                                  清除
-                                </button>
-                              )}
-                            </form>
-                          ) : task.minutes !== null ? (
-                            <button
-                              type="button"
-                              className="lw-time-btn"
-                              title="点击修改耗时"
-                              onClick={() => {
-                                setCustomMinutes(String(task.minutes ?? ''))
-                                setDurationOpenKey(rowKey)
-                              }}
-                            >
-                              {task.minutes} min
-                            </button>
-                          ) : (
-                            <div className="lw-hover-actions">
-                              <button
-                                type="button"
-                                className="lw-icon-btn"
-                                style={{ height: 24, minWidth: 24, padding: '0 5px' }}
-                                title="记录用时"
-                                onClick={() => {
-                                  setCustomMinutes('')
-                                  setDurationOpenKey(rowKey)
-                                }}
-                              >
-                                <IconClock size={13} />
-                              </button>
                             </div>
                           )}
                         </div>
-                      </div>
-                    )
-                  })}
 
-                  {/* Left-aligned inline add task: '+' aligns directly under checkboxes */}
-                  <form
-                    className="lw-item-row"
-                    style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-                    onSubmit={(e) => {
-                      e.preventDefault()
-                      void handleAddTask(group.projectName)
-                    }}
-                  >
-                    <span
-                      style={{
-                        width: 17,
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'var(--lw-muted)',
-                        flexShrink: 0,
-                      }}
-                    >
-                      <IconPlus size={14} />
-                    </span>
-                    <input
-                      className="lw-inline-input"
-                      style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                      value={newTaskInputs[group.projectName] ?? ''}
-                      onChange={(e) =>
-                        setNewTaskInputs((prev) => ({
-                          ...prev,
-                          [group.projectName]: e.target.value,
-                        }))
-                      }
-                      placeholder="添加任务"
-                    />
-                  </form>
+                        <button
+                          type="button"
+                          className="lw-icon-btn"
+                          style={{ height: 26, minWidth: 26 }}
+                          title="打开原文"
+                          onClick={() => onOpenFile(group.fileRelPath)}
+                        >
+                          <IconFile size={14} />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
 
-                {/* Independent Borderless Log Subsection */}
-                {group.exists && logOpen && (
-                  <div className="lw-subsec">
-                    <div className="lw-subsec-title">日志</div>
+                {/* Single active view: 任务 / 日志 / 反思 */}
+                {mode === 'task' ? (
+                  <div className="lw-list">
+                    {group.tasks.map((task) => {
+                      const rowKey = `${group.fileRelPath}:${task.lineIndex}`
+                      const durOpen = durationOpenKey === rowKey
+                      const displayText = cleanTaskDisplayText(task.text, task.minutes !== null)
+
+                      const applyDuration = (mins: number | null) => {
+                        if (!task.checked && mins !== null) {
+                          void handleToggleTask(group, task.lineIndex, mins)
+                        } else {
+                          void handleSetMinutes(group, task.lineIndex, mins)
+                        }
+                      }
+
+                      return (
+                        <div key={task.lineIndex} className="lw-item-row">
+                          <button
+                            type="button"
+                            className={`lw-check ${task.checked ? 'checked' : ''}`}
+                            onClick={() => void handleToggleTask(group, task.lineIndex)}
+                            aria-label={task.checked ? '取消完成' : '标记完成'}
+                          >
+                            {task.checked && <IconCheck />}
+                          </button>
+
+                          <div className={`lw-item-title ${task.checked ? 'lw-item-done' : ''}`}>
+                            {displayText}
+                            {task.fromDate && (
+                              <span className="lw-muted" style={{ marginLeft: 8 }}>
+                                {task.fromDate}
+                              </span>
+                            )}
+                          </div>
+
+                          <div data-duration-menu>
+                            {durOpen ? (
+                              <form
+                                className="lw-popover-row"
+                                onSubmit={(e) => {
+                                  e.preventDefault()
+                                  const parsed = Number(customMinutes.trim())
+                                  if (Number.isFinite(parsed) && parsed > 0) {
+                                    applyDuration(parsed)
+                                  }
+                                }}
+                              >
+                                {[15, 30, 45, 60].map((m) => (
+                                  <button
+                                    key={m}
+                                    type="button"
+                                    className="lw-pop-chip"
+                                    onClick={() => applyDuration(m)}
+                                  >
+                                    {m} min
+                                  </button>
+                                ))}
+                                <input
+                                  className="lw-inline-input"
+                                  style={{
+                                    width: 44,
+                                    fontSize: 12,
+                                    padding: '2px 4px',
+                                    textAlign: 'center',
+                                  }}
+                                  placeholder="min"
+                                  value={customMinutes}
+                                  onChange={(e) => setCustomMinutes(e.target.value)}
+                                  autoFocus
+                                />
+                                {task.minutes !== null && (
+                                  <button
+                                    type="button"
+                                    className="lw-pop-chip"
+                                    title="清除耗时"
+                                    onClick={() => applyDuration(null)}
+                                  >
+                                    清除
+                                  </button>
+                                )}
+                              </form>
+                            ) : task.minutes !== null ? (
+                              <button
+                                type="button"
+                                className="lw-time-btn"
+                                title="点击修改耗时"
+                                onClick={() => {
+                                  setCustomMinutes(String(task.minutes ?? ''))
+                                  setDurationOpenKey(rowKey)
+                                }}
+                              >
+                                {task.minutes} min
+                              </button>
+                            ) : (
+                              <div className="lw-hover-actions">
+                                <button
+                                  type="button"
+                                  className="lw-icon-btn"
+                                  style={{ height: 24, minWidth: 24, padding: '0 5px' }}
+                                  title="记录用时"
+                                  onClick={() => {
+                                    setCustomMinutes('')
+                                    setDurationOpenKey(rowKey)
+                                  }}
+                                >
+                                  <IconClock size={13} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+
+                    <form
+                      className="lw-item-row"
+                      style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+                      onSubmit={(e) => {
+                        e.preventDefault()
+                        void handleAddTask(group.projectName)
+                      }}
+                    >
+                      <span className="lw-bullet-slot">
+                        <IconPlus size={14} />
+                      </span>
+                      <input
+                        className="lw-inline-input"
+                        style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+                        value={newTaskInputs[group.projectName] ?? ''}
+                        onChange={(e) =>
+                          setNewTaskInputs((prev) => ({
+                            ...prev,
+                            [group.projectName]: e.target.value,
+                          }))
+                        }
+                        placeholder="添加任务"
+                      />
+                    </form>
+                  </div>
+                ) : mode === 'log' ? (
+                  <div className="lw-list">
                     {group.logs.map((l, i) => (
-                      <div key={`l-${i}`} className="lw-subsec-item">
-                        {cleanDisplayBullet(l)}
+                      <div key={`l-${i}`} className="lw-item-row">
+                        <span className="lw-bullet-slot">
+                          <span className="lw-bullet-dot" />
+                        </span>
+                        <div className="lw-item-title">{cleanDisplayBullet(l)}</div>
                       </div>
                     ))}
                     <form
-                      className="lw-subsec-add"
+                      className="lw-item-row"
+                      style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
                       onSubmit={(e) => {
                         e.preventDefault()
                         void handleAppendNote(group, 'log')
                       }}
                     >
-                      <IconPlus size={13} />
+                      <span className="lw-bullet-slot">
+                        <IconPlus size={14} />
+                      </span>
                       <input
                         className="lw-inline-input"
-                        style={{ flex: 1, padding: '2px 0', fontSize: 13.5 }}
+                        style={{ flex: 1, padding: 0, fontSize: 13.5 }}
                         value={logInputs[group.projectName] ?? ''}
                         onChange={(e) =>
                           setLogInputs((prev) => ({
@@ -700,32 +699,34 @@ export function TodayView({
                             [group.projectName]: e.target.value,
                           }))
                         }
-                        placeholder="记一条日志"
+                        placeholder="添加日志"
                       />
                     </form>
                   </div>
-                )}
-
-                {/* Independent Borderless Reflection Subsection */}
-                {group.exists && refOpen && (
-                  <div className="lw-subsec reflection">
-                    <div className="lw-subsec-title">反思</div>
+                ) : (
+                  <div className="lw-list">
                     {group.reflections.map((r, i) => (
-                      <div key={`r-${i}`} className="lw-subsec-item">
-                        {cleanDisplayBullet(r)}
+                      <div key={`r-${i}`} className="lw-item-row">
+                        <span className="lw-bullet-slot">
+                          <span className="lw-bullet-dot reflection" />
+                        </span>
+                        <div className="lw-item-title">{cleanDisplayBullet(r)}</div>
                       </div>
                     ))}
                     <form
-                      className="lw-subsec-add"
+                      className="lw-item-row"
+                      style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
                       onSubmit={(e) => {
                         e.preventDefault()
                         void handleAppendNote(group, 'reflection')
                       }}
                     >
-                      <IconPlus size={13} />
+                      <span className="lw-bullet-slot">
+                        <IconPlus size={14} />
+                      </span>
                       <input
                         className="lw-inline-input"
-                        style={{ flex: 1, padding: '2px 0', fontSize: 13.5 }}
+                        style={{ flex: 1, padding: 0, fontSize: 13.5 }}
                         value={reflectionInputs[group.projectName] ?? ''}
                         onChange={(e) =>
                           setReflectionInputs((prev) => ({
@@ -733,7 +734,7 @@ export function TodayView({
                             [group.projectName]: e.target.value,
                           }))
                         }
-                        placeholder="记一条反思"
+                        placeholder="添加反思"
                       />
                     </form>
                   </div>
