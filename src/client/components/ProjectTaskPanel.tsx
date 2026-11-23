@@ -54,9 +54,10 @@ function cleanTaskDisplayText(text: string, hasMinutes: boolean): string {
 
 export interface ProjectTaskPanelProps {
   group: ProjectTaskGroup
-  /** When provided, renders a section title on the left and mode tabs on the right (Today layout).
-   *  When omitted, renders mode tabs flush-left and status/file controls on the right (Project Tasks layout). */
+  /** When provided, renders a section title on the left and mode tabs on the right (Today layout). */
   title?: string
+  /** Optional custom left header control (e.g., compact date switcher in Project Tasks tab). */
+  headerLeft?: React.ReactNode
   readOnly?: boolean
   onToggleTask: (group: ProjectTaskGroup, lineIndex: number, minutes?: number) => void
   onSetMinutes: (group: ProjectTaskGroup, lineIndex: number, minutes: number | null) => void
@@ -70,6 +71,7 @@ export interface ProjectTaskPanelProps {
 export function ProjectTaskPanel({
   group,
   title,
+  headerLeft,
   readOnly = false,
   onToggleTask,
   onSetMinutes,
@@ -89,6 +91,17 @@ export function ProjectTaskPanel({
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [logInput, setLogInput] = useState('')
   const [reflectionInput, setReflectionInput] = useState('')
+
+  useEffect(() => {
+    setNewTaskText('')
+    setNewPrioOpen(false)
+    setPrioOpenKey(null)
+    setDurationOpenKey(null)
+    setCustomMinutes('')
+    setStatusMenuOpen(false)
+    setLogInput('')
+    setReflectionInput('')
+  }, [group.fileRelPath])
 
   useEffect(() => {
     if (!statusMenuOpen && !durationOpenKey && !prioOpenKey && !newPrioOpen) return
@@ -125,11 +138,13 @@ export function ProjectTaskPanel({
         PRIORITY_ORDER[normalizePriority(b.priority)] || a.lineIndex - b.lineIndex,
   )
 
+  const hasLeftHeader = Boolean(title || headerLeft)
+
   const modeTabsEl = (
     <div
       className="lw-mode-tabs"
       role="tablist"
-      style={title ? undefined : { marginRight: 0, marginLeft: -8 }}
+      style={hasLeftHeader ? undefined : { marginRight: 0, marginLeft: -8 }}
     >
       {(
         [
@@ -210,9 +225,9 @@ export function ProjectTaskPanel({
     <section className="lw-stack" style={{ gap: 6 }}>
       {/* Header Bar */}
       <div className="lw-section-head">
-        {title ? (
+        {hasLeftHeader ? (
           <>
-            <h2 className="lw-section-title">{title}</h2>
+            {headerLeft ?? <h2 className="lw-section-title">{title}</h2>}
             <div className="lw-row" style={{ gap: 2 }}>
               {modeTabsEl}
               {rightControlsEl}

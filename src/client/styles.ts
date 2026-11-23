@@ -879,6 +879,51 @@ const CSS = `
   font-weight: 600;
 }
 
+/* Month-grouped task date history popover */
+.lw-date-menu {
+  left: 0;
+  right: auto;
+  min-width: 248px;
+  padding: 6px;
+}
+
+.lw-date-menu-scroll {
+  max-height: 268px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.lw-date-month {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--lw-muted);
+  padding: 6px 9px 3px;
+}
+
+.lw-date-month:first-child {
+  padding-top: 2px;
+}
+
+.lw-date-menu-foot {
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid var(--lw-border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-left: 4px;
+  padding-right: 4px;
+}
+
+.lw-icon-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
+  pointer-events: none;
+}
+
 /* Clickable task duration chip */
 .lw-time-btn {
   appearance: none;

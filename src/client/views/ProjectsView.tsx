@@ -15,6 +15,7 @@ import {
   IconCheck,
   IconChevronDown,
   IconChevronLeft,
+  IconChevronRight,
   IconFile,
   IconPlus,
   IconProjectPie,
@@ -66,6 +67,12 @@ function formatPillDate(iso: string, todayIso: string): string {
   return iso === todayIso ? `今天 ${short}` : short
 }
 
+function formatMonthLabel(ym: string): string {
+  const m = ym.match(/^(\d{4})-(\d{2})$/)
+  if (!m) return ym
+  return `${m[1]}年${Number(m[2])}月`
+}
+
 function splitQuickIdea(raw: string): { title: string; body: string } {
   const text = raw.trim()
   const colonIdx = text.search(/[：:]/)
@@ -112,6 +119,7 @@ export function ProjectsView({
 
   // Interactive Tasks tab state inside Project Detail
   const [selectedTaskDate, setSelectedTaskDate] = useState<string>(snapshot.date)
+  const [taskDateMenuOpen, setTaskDateMenuOpen] = useState(false)
   const [historicalTaskData, setHistoricalTaskData] = useState<{
     projectName: string
     date: string
@@ -257,16 +265,17 @@ export function ProjectsView({
 
   // Close popovers on outside click
   useEffect(() => {
-    if (!statusMenuOpen && !areaMenuOpen && !editingDateField) return
+    if (!statusMenuOpen && !areaMenuOpen && !editingDateField && !taskDateMenuOpen) return
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null
       if (statusMenuOpen && !t?.closest('[data-proj-status]')) setStatusMenuOpen(false)
       if (areaMenuOpen && !t?.closest('[data-proj-area]')) setAreaMenuOpen(false)
       if (editingDateField && !t?.closest('[data-proj-date]')) setEditingDateField(null)
+      if (taskDateMenuOpen && !t?.closest('[data-task-date-menu]')) setTaskDateMenuOpen(false)
     }
     document.addEventListener('mousedown', onDown)
     return () => document.removeEventListener('mousedown', onDown)
-  }, [statusMenuOpen, areaMenuOpen, editingDateField])
+  }, [statusMenuOpen, areaMenuOpen, editingDateField, taskDateMenuOpen])
 
   // Esc key handling
   useEffect(() => {
@@ -275,10 +284,11 @@ export function ProjectsView({
       if (showNewProject) setShowNewProject(false)
       else if (promoteTarget) setPromoteTarget(null)
       else if (cancelTarget) setCancelTarget(null)
-      else if (statusMenuOpen || areaMenuOpen || editingDateField) {
+      else if (statusMenuOpen || areaMenuOpen || editingDateField || taskDateMenuOpen) {
         setStatusMenuOpen(false)
         setAreaMenuOpen(false)
         setEditingDateField(null)
+        setTaskDateMenuOpen(false)
       } else if (selectedProjectName) {
         setSelectedProjectName(null)
       }
@@ -292,6 +302,7 @@ export function ProjectsView({
     statusMenuOpen,
     areaMenuOpen,
     editingDateField,
+    taskDateMenuOpen,
     selectedProjectName,
   ])
 
@@ -300,6 +311,7 @@ export function ProjectsView({
     setSelectedArchived(p.archived)
     setDetailTab('plan')
     setSelectedTaskDate(p.archived ? (p.taskFiles[0]?.date ?? snapshot.date) : snapshot.date)
+    setTaskDateMenuOpen(false)
     setHistoricalTaskData(null)
     setNewPlanText('')
     setGoalDraft(null)
@@ -1113,15 +1125,28 @@ export function ProjectsView({
           ) : (
             (() => {
               const fileByDate = new Map(activeDetail.taskFiles.map((tf) => [tf.date, tf]))
-              const dateList = Array.from(
+              // Chronological ascending list for < / > stepping between recorded days + today
+              const navDatesAsc = Array.from(
                 new Set([
                   snapshot.date,
                   selectedTaskDate,
                   ...activeDetail.taskFiles.map((tf) => tf.date),
                 ]),
-              )
-                .sort((a, b) => b.localeCompare(a))
-                .slice(0, 7)
+              ).sort((a, b) => a.localeCompare(b))
+              const curIdx = navDatesAsc.indexOf(selectedTaskDate)
+              const prevDate = curIdx > 0 ? navDatesAsc[curIdx - 1]! : null
+              const nextDate =
+                curIdx >= 0 && curIdx < navDatesAsc.length - 1 ? navDatesAsc[curIdx + 1]! : null
+
+              // Month-grouped descending list for scrollable history dropdown
+              const monthMap = new Map<string, string[]>()
+              for (const d of [...navDatesAsc].reverse()) {
+                const ym = d.slice(0, 7)
+                const arr = monthMap.get(ym) ?? []
+                arr.push(d)
+                monthMap.set(ym, arr)
+              }
+              const monthGroups = Array.from(monthMap.entries())
 
               const isTodaySelected = selectedTaskDate === snapshot.date
               const activeGroup: ProjectTaskGroup = isTodaySelected
@@ -1134,92 +1159,215 @@ export function ProjectsView({
                   ? historicalTaskData.group
                   : buildEmptyTaskGroup(activeDetail, selectedTaskDate)
 
-              return (
-                <div className="lw-stack" style={{ gap: 14 }}>
-                  {/* Quiet Date Switcher Pills */}
-                  <div className="lw-row" style={{ gap: 6, flexWrap: 'wrap', marginLeft: -8 }}>
-                    {dateList.map((d) => {
-                      const tf = fileByDate.get(d)
-                      return (
-                        <button
-                          key={d}
-                          type="button"
-                          className={`lw-mode-tab ${selectedTaskDate === d ? 'active' : ''}`}
-                          style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
-                          onClick={() => setSelectedTaskDate(d)}
-                        >
-                          {tf && (
-                            <span
-                              className={`lw-status-dot ${tf.status ?? 'todo'}`}
-                              style={{ width: 6, height: 6 }}
-                            />
-                          )}
-                          <span>{formatPillDate(d, snapshot.date)}</span>
-                        </button>
-                      )
-                    })}
+              const currentTf = fileByDate.get(selectedTaskDate)
 
+              const dateSwitcherEl = (
+                <div
+                  className="lw-row"
+                  style={{ gap: 2, marginLeft: -6 }}
+                  data-task-date-menu
+                >
+                  <button
+                    type="button"
+                    className="lw-icon-btn"
+                    style={{ height: 26, minWidth: 26 }}
+                    disabled={!prevDate}
+                    title={prevDate ? `上一条记录 (${prevDate})` : '没有更早的记录'}
+                    onClick={() => {
+                      if (prevDate) {
+                        setTaskDateMenuOpen(false)
+                        setSelectedTaskDate(prevDate)
+                      }
+                    }}
+                  >
+                    <IconChevronLeft size={14} />
+                  </button>
+
+                  <div className="lw-menu-wrap">
                     <button
                       type="button"
-                      className="lw-icon-btn"
-                      style={{ height: 26, minWidth: 26 }}
-                      title="选择其他日期"
-                      onClick={() => {
-                        try {
-                          taskDateInputRef.current?.showPicker?.()
-                        } catch {
-                          taskDateInputRef.current?.focus()
-                          taskDateInputRef.current?.click()
-                        }
-                      }}
+                      className={`lw-status-trigger ${taskDateMenuOpen ? 'open' : ''}`}
+                      style={{ color: 'var(--lw-text)', fontWeight: 600 }}
+                      onClick={() => setTaskDateMenuOpen((v) => !v)}
                     >
-                      <IconCalendar size={13} />
+                      {currentTf && (
+                        <span
+                          className={`lw-status-dot ${currentTf.status ?? 'todo'}`}
+                          style={{ width: 6, height: 6 }}
+                        />
+                      )}
+                      <span>{formatPillDate(selectedTaskDate, snapshot.date)}</span>
+                      <IconChevronDown size={12} />
                     </button>
-                    <input
-                      ref={taskDateInputRef}
-                      type="date"
-                      value={selectedTaskDate}
-                      onChange={(e) => {
-                        if (e.target.value) setSelectedTaskDate(e.target.value)
-                      }}
-                      style={{
-                        position: 'absolute',
-                        opacity: 0,
-                        pointerEvents: 'none',
-                        width: 1,
-                        height: 1,
-                      }}
-                    />
+
+                    {taskDateMenuOpen && (
+                      <div className="lw-menu lw-date-menu" role="menu">
+                        <div className="lw-date-menu-scroll">
+                          {monthGroups.map(([ym, dates]) => (
+                            <React.Fragment key={ym}>
+                              <div className="lw-date-month">{formatMonthLabel(ym)}</div>
+                              {dates.map((d) => {
+                                const tf = fileByDate.get(d)
+                                const active = d === selectedTaskDate
+                                return (
+                                  <button
+                                    key={d}
+                                    type="button"
+                                    role="menuitem"
+                                    className={`lw-menu-item ${active ? 'active' : ''}`}
+                                    onClick={() => {
+                                      setSelectedTaskDate(d)
+                                      setTaskDateMenuOpen(false)
+                                    }}
+                                  >
+                                    <span
+                                      className={`lw-status-dot ${tf ? (tf.status ?? 'todo') : 'pause'}`}
+                                      style={{
+                                        width: 6,
+                                        height: 6,
+                                        opacity: tf ? 1 : 0.35,
+                                      }}
+                                    />
+                                    <span style={{ flex: 1 }}>
+                                      {formatPillDate(d, snapshot.date)}
+                                    </span>
+                                    {tf ? (
+                                      <span className="lw-muted" style={{ fontSize: 11.5 }}>
+                                        {tf.doneCount}/{tf.totalCount}
+                                        {tf.totalMinutes > 0 ? ` · ${tf.totalMinutes}m` : ''}
+                                      </span>
+                                    ) : (
+                                      <span className="lw-muted" style={{ fontSize: 11.5 }}>
+                                        未开始
+                                      </span>
+                                    )}
+                                    <span
+                                      style={{
+                                        width: 12,
+                                        display: 'inline-flex',
+                                        justifyContent: 'center',
+                                        flexShrink: 0,
+                                      }}
+                                    >
+                                      {active && <IconCheck size={12} />}
+                                    </span>
+                                  </button>
+                                )
+                              })}
+                            </React.Fragment>
+                          ))}
+                        </div>
+
+                        <div className="lw-date-menu-foot">
+                          <span className="lw-muted" style={{ fontSize: 11.5 }}>
+                            共 {activeDetail.taskFiles.length} 天记录
+                          </span>
+                          <button
+                            type="button"
+                            className="lw-btn lw-btn-sm lw-btn-ghost"
+                            style={{ height: 24, padding: '0 6px', fontSize: 12 }}
+                            onClick={() => {
+                              try {
+                                taskDateInputRef.current?.showPicker?.()
+                              } catch {
+                                taskDateInputRef.current?.focus()
+                                taskDateInputRef.current?.click()
+                              }
+                            }}
+                          >
+                            <IconCalendar size={12} />
+                            任意日期
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
-                  {!isTodaySelected && historicalTaskLoading ? (
-                    <div className="lw-muted">读取中…</div>
-                  ) : (
-                    <ProjectTaskPanel
-                      key={`${activeDetail.name}:${selectedTaskDate}`}
-                      group={activeGroup}
-                      onToggleTask={(g, idx, mins) =>
-                        handleProjectToggleTask(activeDetail, g, idx, mins)
+                  <button
+                    type="button"
+                    className="lw-icon-btn"
+                    style={{ height: 26, minWidth: 26 }}
+                    disabled={!nextDate}
+                    title={nextDate ? `下一条记录 (${nextDate})` : '已是最新记录'}
+                    onClick={() => {
+                      if (nextDate) {
+                        setTaskDateMenuOpen(false)
+                        setSelectedTaskDate(nextDate)
                       }
-                      onSetMinutes={(g, idx, mins) =>
-                        handleProjectSetMinutes(activeDetail, g, idx, mins)
-                      }
-                      onSetPriority={(g, idx, prio) =>
-                        handleProjectSetPriority(activeDetail, g, idx, prio)
-                      }
-                      onAddTask={(_, text, prio) =>
-                        handleProjectAddTask(activeDetail, text, prio)
-                      }
-                      onSelectStatus={(g, next) =>
-                        handleProjectSelectTaskStatus(activeDetail, g, next)
-                      }
-                      onAppendNote={(g, sec, text) =>
-                        handleProjectAppendNote(activeDetail, g, sec, text)
-                      }
-                      onOpenFile={onOpenFile}
-                    />
+                    }}
+                  >
+                    <IconChevronRight size={14} />
+                  </button>
+
+                  {!isTodaySelected && (
+                    <button
+                      type="button"
+                      className="lw-btn lw-btn-sm lw-btn-ghost"
+                      style={{ height: 24, padding: '0 6px', fontSize: 12 }}
+                      onClick={() => {
+                        setTaskDateMenuOpen(false)
+                        setSelectedTaskDate(snapshot.date)
+                      }}
+                    >
+                      今天
+                    </button>
                   )}
+
+                  <input
+                    ref={taskDateInputRef}
+                    type="date"
+                    value={selectedTaskDate}
+                    onChange={(e) => {
+                      if (e.target.value) {
+                        setSelectedTaskDate(e.target.value)
+                        setTaskDateMenuOpen(false)
+                      }
+                    }}
+                    style={{
+                      position: 'absolute',
+                      opacity: 0,
+                      pointerEvents: 'none',
+                      width: 1,
+                      height: 1,
+                    }}
+                  />
                 </div>
+              )
+
+              if (!isTodaySelected && historicalTaskLoading) {
+                return (
+                  <div className="lw-stack" style={{ gap: 10 }}>
+                    <div className="lw-section-head">{dateSwitcherEl}</div>
+                    <div className="lw-muted">读取中…</div>
+                  </div>
+                )
+              }
+
+              return (
+                <ProjectTaskPanel
+                  key={activeDetail.name}
+                  group={activeGroup}
+                  headerLeft={dateSwitcherEl}
+                  onToggleTask={(g, idx, mins) =>
+                    handleProjectToggleTask(activeDetail, g, idx, mins)
+                  }
+                  onSetMinutes={(g, idx, mins) =>
+                    handleProjectSetMinutes(activeDetail, g, idx, mins)
+                  }
+                  onSetPriority={(g, idx, prio) =>
+                    handleProjectSetPriority(activeDetail, g, idx, prio)
+                  }
+                  onAddTask={(_, text, prio) =>
+                    handleProjectAddTask(activeDetail, text, prio)
+                  }
+                  onSelectStatus={(g, next) =>
+                    handleProjectSelectTaskStatus(activeDetail, g, next)
+                  }
+                  onAppendNote={(g, sec, text) =>
+                    handleProjectAppendNote(activeDetail, g, sec, text)
+                  }
+                  onOpenFile={onOpenFile}
+                />
               )
             })()
           )
