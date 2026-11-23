@@ -125,7 +125,8 @@ function buildTemplates(): Record<string, string> {
     'system/templates/project/project-name.md': `---
 status: idea
 area: 
-timeframe: 
+start: 
+deadline: 
 ---
 
 ## 想法
@@ -326,7 +327,8 @@ export async function initializeVault(
       `---
 status: doing
 area: 工作
-timeframe: 本月完成
+start: ${today}
+deadline: ${formatLocalDate(new Date(now.getTime() + 14 * 86400_000))}
 ---
 
 ## 想法
@@ -430,7 +432,8 @@ status: draft
       `---
 status: doing
 area: 学习
-timeframe: 长期
+start: ${today}
+deadline: 
 ---
 
 ## 想法
@@ -499,7 +502,8 @@ status: todo
       `---
 status: idea
 area: 
-timeframe: 
+start: 
+deadline: 
 ---
 
 ## 想法

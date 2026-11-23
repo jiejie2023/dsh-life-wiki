@@ -84,10 +84,14 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
 
       const projHome = await engine.promoteIdeaToProject('播客剪辑工具', {
         area: '副业',
-        timeframe: '2026-12',
+        start: '2026-11-24',
+        deadline: '2026-12-31',
         goal: '完成音频去静音脚本并发布首版',
       })
       assert.equal(projHome, 'projects/播客剪辑工具/播客剪辑工具.md')
+      snap = await engine.getSnapshot('2026-11-24')
+      assert.equal(snap.projects[0]?.start, '2026-11-24')
+      assert.equal(snap.projects[0]?.deadline, '2026-12-31')
 
       // 3. Add and complete tasks with priority & minutes + append diary
       const taskFile = await engine.addTask(

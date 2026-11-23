@@ -99,6 +99,8 @@ export interface ProjectCard {
   homepageRelPath: string
   status: ProjectStatus
   area: string
+  start: string
+  deadline: string
   timeframe: string
   idea: string
   goal: string

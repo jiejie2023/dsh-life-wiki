@@ -22,6 +22,17 @@ const STATUS_LABELS: Record<ProjectStatus, string> = {
   cancel: '已取消',
 }
 
+function localTodayIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+function formatShortDate(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!m) return iso
+  return `${Number(m[2])}月${Number(m[3])}日`
+}
+
 export function ProjectsView({
   snapshot,
   onOpenFile,
@@ -32,7 +43,6 @@ export function ProjectsView({
   const [selectedProjectName, setSelectedProjectName] = useState<string | null>(null)
   const [selectedArchived, setSelectedArchived] = useState(false)
   const [newPlanText, setNewPlanText] = useState('')
-  const [timeframeDraft, setTimeframeDraft] = useState<string | null>(null)
 
   // Modals
   const [showNewIdea, setShowNewIdea] = useState(false)
@@ -42,12 +52,14 @@ export function ProjectsView({
   const [showNewProject, setShowNewProject] = useState(false)
   const [projName, setProjName] = useState('')
   const [projArea, setProjArea] = useState(snapshot.areas[0] ?? '个人')
-  const [projTimeframe, setProjTimeframe] = useState('')
+  const [projStart, setProjStart] = useState(() => localTodayIso())
+  const [projDeadline, setProjDeadline] = useState('')
   const [projGoal, setProjGoal] = useState('')
 
   const [promoteTarget, setPromoteTarget] = useState<IdeaSummary | null>(null)
   const [promoteArea, setPromoteArea] = useState(snapshot.areas[0] ?? '个人')
-  const [promoteTimeframe, setPromoteTimeframe] = useState('')
+  const [promoteStart, setPromoteStart] = useState(() => localTodayIso())
+  const [promoteDeadline, setPromoteDeadline] = useState('')
   const [promoteGoal, setPromoteGoal] = useState('')
 
   const [cancelTarget, setCancelTarget] = useState<IdeaSummary | null>(null)
@@ -91,7 +103,6 @@ export function ProjectsView({
     setSelectedProjectName(p.name)
     setSelectedArchived(p.archived)
     setNewPlanText('')
-    setTimeframeDraft(null)
   }
 
   const handleTogglePlan = async (project: ProjectCard, lineIndex: number) => {
@@ -150,8 +161,12 @@ export function ProjectsView({
     e.preventDefault()
     if (!projName.trim()) return
     const name = projName.trim()
+    const start = projStart.trim() || localTodayIso()
+    const deadline = projDeadline.trim()
+    const goal = projGoal.trim() || undefined
     setProjName('')
-    setProjTimeframe('')
+    setProjStart(localTodayIso())
+    setProjDeadline('')
     setProjGoal('')
     setShowNewProject(false)
     setSubTab('doing')
@@ -159,8 +174,9 @@ export function ProjectsView({
       api.createProject({
         name,
         area: projArea,
-        timeframe: projTimeframe.trim() || undefined,
-        goal: projGoal.trim() || undefined,
+        start,
+        deadline,
+        goal,
       }),
     )
   }
@@ -169,14 +185,18 @@ export function ProjectsView({
     e.preventDefault()
     if (!promoteTarget) return
     const target = promoteTarget
+    const start = promoteStart.trim() || localTodayIso()
+    const deadline = promoteDeadline.trim()
+    const goal = promoteGoal.trim() || undefined
     setPromoteTarget(null)
     setSubTab('doing')
     await onRunAction(
       () =>
         api.promoteIdea(target.name, {
           area: promoteArea,
-          timeframe: promoteTimeframe.trim() || undefined,
-          goal: promoteGoal.trim() || undefined,
+          start,
+          deadline,
+          goal,
         }),
       { toast: `已立项「${target.name}」` },
     )
@@ -190,6 +210,17 @@ export function ProjectsView({
     setCancelTarget(null)
     setCancelReason('')
     await onRunAction(() => api.cancelIdea(target.name, reason))
+  }
+
+  const updateDetailDate = (project: ProjectCard, field: 'start' | 'deadline', val: string) => {
+    void onRunAction(() => api.updateProjectMeta(project.name, { [field]: val }), {
+      optimistic: (prev) => ({
+        ...prev,
+        projects: prev.projects.map((p) =>
+          p.name === project.name ? { ...p, [field]: val } : p,
+        ),
+      }),
+    })
   }
 
   return (
@@ -226,6 +257,8 @@ export function ProjectsView({
               setShowNewIdea(true)
             } else {
               setProjArea(snapshot.areas[0] ?? '个人')
+              setProjStart(localTodayIso())
+              setProjDeadline('')
               setShowNewProject(true)
             }
           }}
@@ -266,11 +299,12 @@ export function ProjectsView({
                 <div className="lw-row" onClick={(e) => e.stopPropagation()}>
                   <button
                     type="button"
-                    className="lw-btn lw-btn-sm lw-btn-accent"
+                    className="lw-btn lw-btn-sm lw-btn-primary"
                     onClick={() => {
                       setPromoteTarget(idea)
                       setPromoteArea(snapshot.areas[0] ?? '个人')
-                      setPromoteTimeframe('')
+                      setPromoteStart(localTodayIso())
+                      setPromoteDeadline('')
                       setPromoteGoal('')
                     }}
                   >
@@ -294,12 +328,16 @@ export function ProjectsView({
       ) : visibleProjects.length === 0 ? (
         <div className="lw-empty">当前分组下没有项目</div>
       ) : (
-        /* Clean Project List */
+        /* Clean Things 3 Project List */
         <div className="lw-list">
           {visibleProjects.map((p) => {
             const donePlan = p.plan.filter((i) => i.checked).length
             const totalPlan = p.plan.length
-            const pct = totalPlan > 0 ? Math.round((donePlan / totalPlan) * 100) : 0
+            const isOverdue =
+              !p.archived &&
+              p.status !== 'done' &&
+              Boolean(p.deadline) &&
+              p.deadline < snapshot.date
 
             return (
               <div key={p.homepageRelPath} className="lw-project-row" onClick={() => openDetail(p)}>
@@ -308,10 +346,16 @@ export function ProjectsView({
                     <IconProjectPie ratio={totalPlan > 0 ? donePlan / totalPlan : 0} size={16} />
                     <span style={{ fontWeight: 600, fontSize: 14.5 }}>{p.name}</span>
                     {p.area && <span className="lw-muted">{p.area}</span>}
-                    {p.timeframe && <span className="lw-muted">{p.timeframe}</span>}
-                    {!p.archived && p.status === 'doing' && p.staleDays !== null && p.staleDays >= 7 && (
-                      <span className="lw-tag lw-tag-warn">{p.staleDays}天未动</span>
-                    )}
+                    {p.deadline ? (
+                      <span
+                        className="lw-muted"
+                        style={isOverdue ? { color: 'var(--lw-danger)', fontWeight: 500 } : undefined}
+                      >
+                        截止 {formatShortDate(p.deadline)}
+                      </span>
+                    ) : !p.start && p.timeframe ? (
+                      <span className="lw-muted">{p.timeframe}</span>
+                    ) : null}
                   </div>
                   {(p.nextStep || p.goal) && (
                     <div
@@ -329,18 +373,7 @@ export function ProjectsView({
                   )}
                 </div>
 
-                <div className="lw-row" style={{ gap: 12, flexShrink: 0 }}>
-                  {totalPlan > 0 && (
-                    <div className="lw-row" style={{ gap: 7 }}>
-                      <div className="lw-bar">
-                        <div className="lw-bar-fill" style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="lw-muted" style={{ minWidth: 28, textAlign: 'right' }}>
-                        {donePlan}/{totalPlan}
-                      </span>
-                    </div>
-                  )}
-
+                <div className="lw-row" style={{ gap: 10, flexShrink: 0 }}>
                   {!p.archived && (
                     <div className="lw-hover-actions" onClick={(e) => e.stopPropagation()}>
                       <button
@@ -356,6 +389,11 @@ export function ProjectsView({
                         今日开做
                       </button>
                     </div>
+                  )}
+                  {totalPlan > 0 && (
+                    <span className="lw-muted" style={{ minWidth: 28, textAlign: 'right' }}>
+                      {donePlan}/{totalPlan}
+                    </span>
                   )}
                 </div>
               </div>
@@ -380,7 +418,6 @@ export function ProjectsView({
             </div>
 
             <div className="lw-panel-body lw-stack" style={{ gap: 20 }}>
-              {/* Meta controls */}
               {!activeDetail.archived ? (
                 <div className="lw-stack" style={{ gap: 12 }}>
                   <div className="lw-row" style={{ gap: 6 }}>
@@ -407,49 +444,64 @@ export function ProjectsView({
                     ))}
                   </div>
 
+                  <div>
+                    <label className="lw-field-label">领域</label>
+                    <select
+                      className="lw-select"
+                      value={activeDetail.area || snapshot.areas[0] || ''}
+                      onChange={(e) => {
+                        const area = e.target.value
+                        void onRunAction(() => api.updateProjectMeta(activeDetail.name, { area }), {
+                          optimistic: (prev) => ({
+                            ...prev,
+                            projects: prev.projects.map((p) =>
+                              p.name === activeDetail.name ? { ...p, area } : p,
+                            ),
+                          }),
+                        })
+                      }}
+                    >
+                      {Array.from(
+                        new Set([...snapshot.areas, ...(activeDetail.area ? [activeDetail.area] : [])]),
+                      ).map((a) => (
+                        <option key={a} value={a}>
+                          {a}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div>
-                      <label className="lw-field-label">领域</label>
-                      <select
-                        className="lw-select"
-                        value={activeDetail.area || snapshot.areas[0] || ''}
-                        onChange={(e) => {
-                          const area = e.target.value
-                          void onRunAction(() => api.updateProjectMeta(activeDetail.name, { area }), {
-                            optimistic: (prev) => ({
-                              ...prev,
-                              projects: prev.projects.map((p) =>
-                                p.name === activeDetail.name ? { ...p, area } : p,
-                              ),
-                            }),
-                          })
-                        }}
-                      >
-                        {Array.from(
-                          new Set([...snapshot.areas, ...(activeDetail.area ? [activeDetail.area] : [])]),
-                        ).map((a) => (
-                          <option key={a} value={a}>
-                            {a}
-                          </option>
-                        ))}
-                      </select>
+                      <label className="lw-field-label">开始日期 (start)</label>
+                      <input
+                        type="date"
+                        className="lw-input"
+                        value={activeDetail.start}
+                        onChange={(e) => updateDetailDate(activeDetail, 'start', e.target.value)}
+                      />
                     </div>
                     <div>
-                      <label className="lw-field-label">周期</label>
+                      <div className="lw-between" style={{ marginBottom: 5 }}>
+                        <label className="lw-field-label" style={{ margin: 0 }}>
+                          截止日期 (deadline)
+                        </label>
+                        {activeDetail.deadline && (
+                          <button
+                            type="button"
+                            className="lw-btn lw-btn-sm lw-btn-ghost"
+                            style={{ height: 18, padding: '0 4px', fontSize: 11.5 }}
+                            onClick={() => updateDetailDate(activeDetail, 'deadline', '')}
+                          >
+                            清除
+                          </button>
+                        )}
+                      </div>
                       <input
+                        type="date"
                         className="lw-input"
-                        value={timeframeDraft ?? activeDetail.timeframe}
-                        onChange={(e) => setTimeframeDraft(e.target.value)}
-                        onBlur={() => {
-                          if (timeframeDraft !== null && timeframeDraft !== activeDetail.timeframe) {
-                            const tf = timeframeDraft.trim()
-                            setTimeframeDraft(null)
-                            void onRunAction(() =>
-                              api.updateProjectMeta(activeDetail.name, { timeframe: tf }),
-                            )
-                          }
-                        }}
-                        placeholder="如 2026-Q4"
+                        value={activeDetail.deadline}
+                        onChange={(e) => updateDetailDate(activeDetail, 'deadline', e.target.value)}
                       />
                     </div>
                   </div>
@@ -458,7 +510,8 @@ export function ProjectsView({
                 <div className="lw-row">
                   <span className="lw-tag">{STATUS_LABELS[activeDetail.status]}</span>
                   {activeDetail.area && <span className="lw-tag">{activeDetail.area}</span>}
-                  {activeDetail.timeframe && <span className="lw-tag">{activeDetail.timeframe}</span>}
+                  {activeDetail.start && <span className="lw-tag">起 {activeDetail.start}</span>}
+                  {activeDetail.deadline && <span className="lw-tag">止 {activeDetail.deadline}</span>}
                 </div>
               )}
 
@@ -562,10 +615,13 @@ export function ProjectsView({
                   type="button"
                   className="lw-btn lw-btn-primary"
                   onClick={() =>
-                    void onRunAction(async () => {
-                      await api.restoreProject(activeDetail.name)
-                      setSelectedProjectName(null)
-                    }, { toast: '已恢复项目' })
+                    void onRunAction(
+                      async () => {
+                        await api.restoreProject(activeDetail.name)
+                        setSelectedProjectName(null)
+                      },
+                      { toast: '已恢复项目' },
+                    )
                   }
                 >
                   恢复项目
@@ -577,10 +633,13 @@ export function ProjectsView({
                     className="lw-btn lw-btn-ghost"
                     style={{ marginRight: 'auto' }}
                     onClick={() =>
-                      void onRunAction(async () => {
-                        await api.archiveProject(activeDetail.name, 'done')
-                        setSelectedProjectName(null)
-                      }, { toast: '已归档项目' })
+                      void onRunAction(
+                        async () => {
+                          await api.archiveProject(activeDetail.name, 'done')
+                          setSelectedProjectName(null)
+                        },
+                        { toast: '已归档项目' },
+                      )
                     }
                   >
                     归档
@@ -615,11 +674,7 @@ export function ProjectsView({
           >
             <div className="lw-panel-header">
               <strong>记一个想法</strong>
-              <button
-                type="button"
-                className="lw-icon-btn"
-                onClick={() => setShowNewIdea(false)}
-              >
+              <button type="button" className="lw-icon-btn" onClick={() => setShowNewIdea(false)}>
                 <IconX />
               </button>
             </div>
@@ -644,7 +699,11 @@ export function ProjectsView({
               </div>
             </div>
             <div className="lw-panel-footer">
-              <button type="button" className="lw-btn lw-btn-ghost" onClick={() => setShowNewIdea(false)}>
+              <button
+                type="button"
+                className="lw-btn lw-btn-ghost"
+                onClick={() => setShowNewIdea(false)}
+              >
                 取消
               </button>
               <button type="submit" className="lw-btn lw-btn-primary">
@@ -684,28 +743,37 @@ export function ProjectsView({
                   required
                 />
               </div>
+              <div>
+                <label className="lw-field-label">领域</label>
+                <select
+                  className="lw-select"
+                  value={projArea}
+                  onChange={(e) => setProjArea(e.target.value)}
+                >
+                  {snapshot.areas.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label className="lw-field-label">领域</label>
-                  <select
-                    className="lw-select"
-                    value={projArea}
-                    onChange={(e) => setProjArea(e.target.value)}
-                  >
-                    {snapshot.areas.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="lw-field-label">开始日期</label>
+                  <input
+                    type="date"
+                    className="lw-input"
+                    value={projStart}
+                    onChange={(e) => setProjStart(e.target.value)}
+                  />
                 </div>
                 <div>
-                  <label className="lw-field-label">周期</label>
+                  <label className="lw-field-label">截止日期（可选，不填为长期）</label>
                   <input
+                    type="date"
                     className="lw-input"
-                    value={projTimeframe}
-                    onChange={(e) => setProjTimeframe(e.target.value)}
-                    placeholder="可选"
+                    value={projDeadline}
+                    onChange={(e) => setProjDeadline(e.target.value)}
                   />
                 </div>
               </div>
@@ -720,7 +788,11 @@ export function ProjectsView({
               </div>
             </div>
             <div className="lw-panel-footer">
-              <button type="button" className="lw-btn lw-btn-ghost" onClick={() => setShowNewProject(false)}>
+              <button
+                type="button"
+                className="lw-btn lw-btn-ghost"
+                onClick={() => setShowNewProject(false)}
+              >
                 取消
               </button>
               <button type="submit" className="lw-btn lw-btn-primary">
@@ -746,28 +818,37 @@ export function ProjectsView({
               </button>
             </div>
             <div className="lw-panel-body lw-stack" style={{ gap: 12 }}>
+              <div>
+                <label className="lw-field-label">领域</label>
+                <select
+                  className="lw-select"
+                  value={promoteArea}
+                  onChange={(e) => setPromoteArea(e.target.value)}
+                >
+                  {snapshot.areas.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
+                  ))}
+                </select>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                 <div>
-                  <label className="lw-field-label">领域</label>
-                  <select
-                    className="lw-select"
-                    value={promoteArea}
-                    onChange={(e) => setPromoteArea(e.target.value)}
-                  >
-                    {snapshot.areas.map((a) => (
-                      <option key={a} value={a}>
-                        {a}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="lw-field-label">开始日期</label>
+                  <input
+                    type="date"
+                    className="lw-input"
+                    value={promoteStart}
+                    onChange={(e) => setPromoteStart(e.target.value)}
+                  />
                 </div>
                 <div>
-                  <label className="lw-field-label">周期</label>
+                  <label className="lw-field-label">截止日期（可选）</label>
                   <input
+                    type="date"
                     className="lw-input"
-                    value={promoteTimeframe}
-                    onChange={(e) => setPromoteTimeframe(e.target.value)}
-                    placeholder="可选"
+                    value={promoteDeadline}
+                    onChange={(e) => setPromoteDeadline(e.target.value)}
                   />
                 </div>
               </div>
@@ -781,7 +862,11 @@ export function ProjectsView({
               </div>
             </div>
             <div className="lw-panel-footer">
-              <button type="button" className="lw-btn lw-btn-ghost" onClick={() => setPromoteTarget(null)}>
+              <button
+                type="button"
+                className="lw-btn lw-btn-ghost"
+                onClick={() => setPromoteTarget(null)}
+              >
                 取消
               </button>
               <button type="submit" className="lw-btn lw-btn-primary">
@@ -816,7 +901,11 @@ export function ProjectsView({
               />
             </div>
             <div className="lw-panel-footer">
-              <button type="button" className="lw-btn lw-btn-ghost" onClick={() => setCancelTarget(null)}>
+              <button
+                type="button"
+                className="lw-btn lw-btn-ghost"
+                onClick={() => setCancelTarget(null)}
+              >
                 取消
               </button>
               <button type="submit" className="lw-btn lw-btn-danger">
