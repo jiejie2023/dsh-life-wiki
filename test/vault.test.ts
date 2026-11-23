@@ -242,15 +242,24 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
     const parsed = parseReviewSections(sample)
     assert.equal(parsed.status, 'draft')
     assert.equal(parsed.totalHoursLine, '本周投入：1.5 小时')
-    assert.equal(parsed.thisWeek, '1. ✅ 完成主页结构')
+    assert.deepEqual(parsed.thisWeekItems, [{ done: true, text: '完成主页结构' }])
+    assert.deepEqual(parsed.reasons, ['花了些时间打磨文案'])
+    assert.deepEqual(parsed.lessons, ['先写纯文本再排版'])
+    assert.deepEqual(parsed.nextWeekItems, ['补齐 3 个项目截图'])
 
     const updated = applyReviewSections(sample, {
       ...parsed,
       status: 'final',
-      lesson: '- 先写纯文本再排版\n- 每次改动做视觉验收',
+      thisWeekItems: [
+        ...parsed.thisWeekItems,
+        { done: false, text: '3 个项目截图尚未收齐' },
+      ],
+      lessons: [...parsed.lessons, '每次改动做视觉验收'],
     })
     assert.match(updated, /status: final/)
+    assert.match(updated, /1\. ✅ 完成主页结构/)
+    assert.match(updated, /2\. ❌ 3 个项目截图尚未收齐/)
     assert.match(updated, /本周投入：1\.5 小时/)
-    assert.match(updated, /每次改动做视觉验收/)
+    assert.match(updated, /- 每次改动做视觉验收/)
   })
 })

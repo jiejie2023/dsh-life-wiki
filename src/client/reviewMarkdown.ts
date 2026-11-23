@@ -1,12 +1,17 @@
 import type { ReviewStatus } from '../shared/types.ts'
 
+export interface ReviewWeekItem {
+  done: boolean
+  text: string
+}
+
 export interface ReviewDraft {
   status: ReviewStatus
-  thisWeek: string
+  thisWeekItems: ReviewWeekItem[]
   totalHoursLine: string
-  reason: string
-  lesson: string
-  nextWeek: string
+  reasons: string[]
+  lessons: string[]
+  nextWeekItems: string[]
 }
 
 function splitLines(text: string): { lines: string[]; eol: '\r\n' | '\n' } {
@@ -89,6 +94,36 @@ function updateYamlStatus(text: string, status: ReviewStatus): string {
   return ['---', `status: ${status}`, '---', '', ...lines].join(eol)
 }
 
+function stripListPrefix(line: string): string {
+  return line
+    .trim()
+    .replace(/^(?:\d+[.、]\s*|[-*•·]\s+)/, '')
+    .trim()
+}
+
+export function parseReviewWeekLine(raw: string): ReviewWeekItem | null {
+  const cleaned = stripListPrefix(raw)
+  if (!cleaned) return null
+  if (/^(?:✅|\[x\]|✓|✔)\s*/i.test(cleaned)) {
+    const text = cleaned.replace(/^(?:✅|\[x\]|✓|✔)\s*/i, '').trim()
+    return text ? { done: true, text } : null
+  }
+  if (/^(?:❌|\[ \]|✗|×)\s*/i.test(cleaned)) {
+    const text = cleaned.replace(/^(?:❌|\[ \]|✗|×)\s*/i, '').trim()
+    return text ? { done: false, text } : null
+  }
+  return { done: true, text: cleaned }
+}
+
+function parsePlainList(sectionBody: string): string[] {
+  const out: string[] = []
+  for (const raw of sectionBody.split('\n')) {
+    const text = stripListPrefix(raw)
+    if (text) out.push(text)
+  }
+  return out
+}
+
 export function parseReviewSections(markdown: string): ReviewDraft {
   const { lines } = splitLines(markdown)
   let status: ReviewStatus = 'draft'
@@ -105,47 +140,63 @@ export function parseReviewSections(markdown: string): ReviewDraft {
 
   const rawThisWeek = getSectionBody(lines, '本周')
   let totalHoursLine = ''
-  const thisWeekLines: string[] = []
+  const thisWeekItems: ReviewWeekItem[] = []
   for (const line of rawThisWeek.split('\n')) {
     const trimmed = line.trim()
+    if (!trimmed) continue
     if (/^本周投入[：:]/.test(trimmed)) {
       totalHoursLine = trimmed
-    } else {
-      thisWeekLines.push(line)
+      continue
     }
+    const item = parseReviewWeekLine(trimmed)
+    if (item) thisWeekItems.push(item)
   }
 
-  const reason = getSectionBody(lines, '原因')
-  const lesson = getSectionBody(lines, '经验')
-  const rawNextWeek = getSectionBody(lines, '下周')
-  const nextWeek = rawNextWeek === '1.' ? '' : rawNextWeek
+  const reasons = parsePlainList(getSectionBody(lines, '原因'))
+  const lessons = parsePlainList(getSectionBody(lines, '经验'))
+  const nextWeekItems = parsePlainList(getSectionBody(lines, '下周'))
 
   return {
     status,
-    thisWeek: thisWeekLines.join('\n').trim(),
+    thisWeekItems,
     totalHoursLine,
-    reason,
-    lesson,
-    nextWeek,
+    reasons,
+    lessons,
+    nextWeekItems,
   }
 }
 
 export function applyReviewSections(originalMarkdown: string, draft: ReviewDraft): string {
   let next = updateYamlStatus(originalMarkdown, draft.status)
 
-  const twLines = draft.thisWeek.trim() ? draft.thisWeek.trim().split('\n') : []
-  const hasHoursAlready = twLines.some((l) => /^本周投入[：:]/.test(l.trim()))
-  if (draft.totalHoursLine && !hasHoursAlready) {
+  const twLines = draft.thisWeekItems
+    .map((item) => ({ ...item, text: item.text.trim() }))
+    .filter((item) => item.text.length > 0)
+    .map((item, idx) => `${idx + 1}. ${item.done ? '✅' : '❌'} ${item.text}`)
+
+  if (draft.totalHoursLine) {
     if (twLines.length > 0) twLines.push('')
     twLines.push(draft.totalHoursLine)
   }
   next = replaceH2Body(next, '本周', twLines)
-  next = replaceH2Body(next, '原因', draft.reason.trim() ? draft.reason.trim().split('\n') : [])
-  next = replaceH2Body(next, '经验', draft.lesson.trim() ? draft.lesson.trim().split('\n') : [])
-  next = replaceH2Body(
-    next,
-    '下周',
-    draft.nextWeek.trim() ? draft.nextWeek.trim().split('\n') : [],
-  )
+
+  const reasonLines = draft.reasons
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => `- ${s}`)
+  next = replaceH2Body(next, '原因', reasonLines)
+
+  const lessonLines = draft.lessons
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s) => `- ${s}`)
+  next = replaceH2Body(next, '经验', lessonLines)
+
+  const nextWeekLines = draft.nextWeekItems
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((s, idx) => `${idx + 1}. ${s}`)
+  next = replaceH2Body(next, '下周', nextWeekLines)
+
   return next
 }

@@ -13,6 +13,8 @@ import {
   IconChevronLeft,
   IconChevronRight,
   IconFile,
+  IconPlus,
+  IconX,
 } from './Icons.tsx'
 
 interface ProjectReviewPanelProps {
@@ -20,41 +22,6 @@ interface ProjectReviewPanelProps {
   currentWeek: string
   onOpenFile: (relPath: string, opts?: { edit?: boolean }) => void
   onRunAction: RunActionFn
-}
-
-function AutoReviewTextarea({
-  value,
-  disabled,
-  onChange,
-  onBlur,
-  placeholder,
-}: {
-  value: string
-  disabled?: boolean
-  onChange: (next: string) => void
-  onBlur: () => void
-  placeholder: string
-}) {
-  const ref = useRef<HTMLTextAreaElement | null>(null)
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${el.scrollHeight}px`
-  }, [value])
-
-  return (
-    <textarea
-      ref={ref}
-      className="lw-idea-field"
-      rows={1}
-      disabled={disabled}
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      onBlur={onBlur}
-      placeholder={placeholder}
-    />
-  )
 }
 
 export function ProjectReviewPanel({
@@ -76,11 +43,16 @@ export function ProjectReviewPanel({
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
+  // Quick-add inline inputs
+  const [newWeekItem, setNewWeekItem] = useState('')
+  const [newReason, setNewReason] = useState('')
+  const [newLesson, setNewLesson] = useState('')
+  const [newNextItem, setNewNextItem] = useState('')
+
   const dirtyRef = useRef(false)
   const latestRawRef = useRef<string | null>(null)
   const latestDraftRef = useRef<ReviewDraft | null>(null)
 
-  // Keep selectedWeek valid when review list changes (e.g. right after generating a new draft)
   useEffect(() => {
     if (project.reviewFiles.length === 0) {
       setSelectedWeek('')
@@ -105,6 +77,10 @@ export function ProjectReviewPanel({
     let alive = true
     setLoading(true)
     dirtyRef.current = false
+    setNewWeekItem('')
+    setNewReason('')
+    setNewLesson('')
+    setNewNextItem('')
     api
       .readFile(selectedSummary.relPath)
       .then((res) => {
@@ -152,14 +128,13 @@ export function ProjectReviewPanel({
     }
   }, [menuOpen, statusMenuOpen])
 
-  const updateDraft = (patch: Partial<ReviewDraft>) => {
-    setDraft((prev) => {
-      if (!prev) return prev
-      const next = { ...prev, ...patch }
-      latestDraftRef.current = next
-      dirtyRef.current = true
-      return next
-    })
+  const commitDraft = (next: ReviewDraft, immediateSave = false) => {
+    setDraft(next)
+    latestDraftRef.current = next
+    dirtyRef.current = true
+    if (immediateSave) {
+      void flushSave(next)
+    }
   }
 
   const flushSave = async (overrideDraft?: ReviewDraft) => {
@@ -189,11 +164,7 @@ export function ProjectReviewPanel({
   const handleSelectStatus = (nextStatus: ReviewStatus) => {
     setStatusMenuOpen(false)
     if (!draft || project.archived || draft.status === nextStatus) return
-    const next: ReviewDraft = { ...draft, status: nextStatus }
-    setDraft(next)
-    latestDraftRef.current = next
-    dirtyRef.current = true
-    void flushSave(next)
+    commitDraft({ ...draft, status: nextStatus }, true)
   }
 
   const handleSwitchWeek = async (nextWeek: string) => {
@@ -216,7 +187,10 @@ export function ProjectReviewPanel({
 
   if (!selectedSummary) {
     return (
-      <div className="lw-empty" style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+      <div
+        className="lw-empty"
+        style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}
+      >
         <span>暂无周复盘</span>
         {!project.archived && (
           <button
@@ -237,7 +211,7 @@ export function ProjectReviewPanel({
   const hasCurrentWeek = project.reviewFiles.some((r) => r.week === currentWeek)
 
   return (
-    <div className="lw-stack" style={{ gap: 22 }}>
+    <div className="lw-stack" style={{ gap: 24 }}>
       {/* Single-Row Week Switcher & Status Controls */}
       <div className="lw-section-head">
         <div className="lw-row" style={{ gap: 2, marginLeft: -6 }} data-review-week-menu>
@@ -332,7 +306,11 @@ export function ProjectReviewPanel({
         </div>
 
         <div className="lw-row" style={{ gap: 2 }}>
-          {saving && <span className="lw-muted" style={{ marginRight: 4 }}>保存中…</span>}
+          {saving && (
+            <span className="lw-muted" style={{ marginRight: 4 }}>
+              保存中…
+            </span>
+          )}
           {draft && !project.archived && (
             <div className="lw-menu-wrap" data-review-status-menu>
               <button
@@ -384,64 +362,309 @@ export function ProjectReviewPanel({
         </div>
       </div>
 
-      {/* Inline Editable 4-Section Weekly Review */}
+      {/* Native Things 3 Structured Review Sections (Zero raw Markdown syntax / OS emojis) */}
       {loading || !draft || rawContent === null ? (
         <div className="lw-muted">读取中…</div>
       ) : (
-        <div className="lw-stack" style={{ gap: 22 }}>
-          <section className="lw-idea-section">
-            <div className="lw-between">
-              <span className="lw-idea-q" style={{ fontWeight: 600, color: 'var(--lw-text-2)' }}>
+        <div className="lw-stack" style={{ gap: 24 }}>
+          {/* 1. 本周 */}
+          <section className="lw-stack" style={{ gap: 4 }}>
+            <div className="lw-between" style={{ paddingBottom: 4 }}>
+              <span className="lw-section-title" style={{ fontSize: 13.5 }}>
                 本周
               </span>
               {draft.totalHoursLine && <span className="lw-muted">{draft.totalHoursLine}</span>}
             </div>
-            <AutoReviewTextarea
-              value={draft.thisWeek}
-              disabled={project.archived}
-              onChange={(v) => updateDraft({ thisWeek: v })}
-              onBlur={() => void flushSave()}
-              placeholder="列出本周推进的事项（✅ / ❌）…"
-            />
+            <div className="lw-list">
+              {draft.thisWeekItems.map((item, idx) => (
+                <div key={`tw-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
+                  <button
+                    type="button"
+                    className={`lw-check ${item.done ? 'checked' : 'missed'}`}
+                    style={{ marginTop: 0 }}
+                    disabled={project.archived}
+                    title={item.done ? '已完成（点击切为未完成）' : '未完成（点击切为已完成）'}
+                    onClick={() => {
+                      const nextItems = draft.thisWeekItems.map((it, i) =>
+                        i === idx ? { ...it, done: !it.done } : it,
+                      )
+                      commitDraft({ ...draft, thisWeekItems: nextItems }, true)
+                    }}
+                  >
+                    {item.done ? <IconCheck /> : <IconX size={10} />}
+                  </button>
+                  <input
+                    className="lw-inline-input"
+                    style={{ flex: 1, padding: 0, fontSize: 14 }}
+                    disabled={project.archived}
+                    value={item.text}
+                    onChange={(e) => {
+                      const nextItems = draft.thisWeekItems.map((it, i) =>
+                        i === idx ? { ...it, text: e.target.value } : it,
+                      )
+                      commitDraft({ ...draft, thisWeekItems: nextItems })
+                    }}
+                    onBlur={() => void flushSave()}
+                  />
+                  {!project.archived && (
+                    <div className="lw-hover-actions">
+                      <button
+                        type="button"
+                        className="lw-icon-btn"
+                        style={{ height: 22, minWidth: 22, padding: 0 }}
+                        title="移除"
+                        onClick={() => {
+                          const nextItems = draft.thisWeekItems.filter((_, i) => i !== idx)
+                          commitDraft({ ...draft, thisWeekItems: nextItems }, true)
+                        }}
+                      >
+                        <IconX size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {!project.archived && (
+                <form
+                  className="lw-item-row"
+                  style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const text = newWeekItem.trim()
+                    if (!text) return
+                    setNewWeekItem('')
+                    commitDraft(
+                      {
+                        ...draft,
+                        thisWeekItems: [...draft.thisWeekItems, { done: true, text }],
+                      },
+                      true,
+                    )
+                  }}
+                >
+                  <span className="lw-bullet-slot">
+                    <IconPlus size={14} />
+                  </span>
+                  <input
+                    className="lw-inline-input"
+                    style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+                    value={newWeekItem}
+                    onChange={(e) => setNewWeekItem(e.target.value)}
+                    placeholder="添加本周事项"
+                  />
+                </form>
+              )}
+            </div>
           </section>
 
-          <section className="lw-idea-section">
-            <span className="lw-idea-q" style={{ fontWeight: 600, color: 'var(--lw-text-2)' }}>
+          {/* 2. 原因 */}
+          <section className="lw-stack" style={{ gap: 4 }}>
+            <span className="lw-section-title" style={{ fontSize: 13.5, paddingBottom: 4 }}>
               原因
             </span>
-            <AutoReviewTextarea
-              value={draft.reason}
-              disabled={project.archived}
-              onChange={(v) => updateDraft({ reason: v })}
-              onBlur={() => void flushSave()}
-              placeholder="做成了靠什么，没做完卡在哪里…"
-            />
+            <div className="lw-list">
+              {draft.reasons.map((text, idx) => (
+                <div key={`rs-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
+                  <span className="lw-bullet-slot">
+                    <span className="lw-bullet-dot" />
+                  </span>
+                  <input
+                    className="lw-inline-input"
+                    style={{ flex: 1, padding: 0, fontSize: 14 }}
+                    disabled={project.archived}
+                    value={text}
+                    onChange={(e) => {
+                      const next = draft.reasons.map((s, i) => (i === idx ? e.target.value : s))
+                      commitDraft({ ...draft, reasons: next })
+                    }}
+                    onBlur={() => void flushSave()}
+                  />
+                  {!project.archived && (
+                    <div className="lw-hover-actions">
+                      <button
+                        type="button"
+                        className="lw-icon-btn"
+                        style={{ height: 22, minWidth: 22, padding: 0 }}
+                        title="移除"
+                        onClick={() => {
+                          const next = draft.reasons.filter((_, i) => i !== idx)
+                          commitDraft({ ...draft, reasons: next }, true)
+                        }}
+                      >
+                        <IconX size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {!project.archived && (
+                <form
+                  className="lw-item-row"
+                  style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const text = newReason.trim()
+                    if (!text) return
+                    setNewReason('')
+                    commitDraft({ ...draft, reasons: [...draft.reasons, text] }, true)
+                  }}
+                >
+                  <span className="lw-bullet-slot">
+                    <IconPlus size={14} />
+                  </span>
+                  <input
+                    className="lw-inline-input"
+                    style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+                    value={newReason}
+                    onChange={(e) => setNewReason(e.target.value)}
+                    placeholder="添加原因"
+                  />
+                </form>
+              )}
+            </div>
           </section>
 
-          <section className="lw-idea-section">
-            <span className="lw-idea-q" style={{ fontWeight: 600, color: 'var(--lw-text-2)' }}>
+          {/* 3. 经验 */}
+          <section className="lw-stack" style={{ gap: 4 }}>
+            <span className="lw-section-title" style={{ fontSize: 13.5, paddingBottom: 4 }}>
               经验
             </span>
-            <AutoReviewTextarea
-              value={draft.lesson}
-              disabled={project.archived}
-              onChange={(v) => updateDraft({ lesson: v })}
-              onBlur={() => void flushSave()}
-              placeholder="值得以后复用的做法或教训…"
-            />
+            <div className="lw-list">
+              {draft.lessons.map((text, idx) => (
+                <div key={`ls-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
+                  <span className="lw-bullet-slot">
+                    <span className="lw-bullet-dot reflection" />
+                  </span>
+                  <input
+                    className="lw-inline-input"
+                    style={{ flex: 1, padding: 0, fontSize: 14 }}
+                    disabled={project.archived}
+                    value={text}
+                    onChange={(e) => {
+                      const next = draft.lessons.map((s, i) => (i === idx ? e.target.value : s))
+                      commitDraft({ ...draft, lessons: next })
+                    }}
+                    onBlur={() => void flushSave()}
+                  />
+                  {!project.archived && (
+                    <div className="lw-hover-actions">
+                      <button
+                        type="button"
+                        className="lw-icon-btn"
+                        style={{ height: 22, minWidth: 22, padding: 0 }}
+                        title="移除"
+                        onClick={() => {
+                          const next = draft.lessons.filter((_, i) => i !== idx)
+                          commitDraft({ ...draft, lessons: next }, true)
+                        }}
+                      >
+                        <IconX size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {!project.archived && (
+                <form
+                  className="lw-item-row"
+                  style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const text = newLesson.trim()
+                    if (!text) return
+                    setNewLesson('')
+                    commitDraft({ ...draft, lessons: [...draft.lessons, text] }, true)
+                  }}
+                >
+                  <span className="lw-bullet-slot">
+                    <IconPlus size={14} />
+                  </span>
+                  <input
+                    className="lw-inline-input"
+                    style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+                    value={newLesson}
+                    onChange={(e) => setNewLesson(e.target.value)}
+                    placeholder="添加经验"
+                  />
+                </form>
+              )}
+            </div>
           </section>
 
-          <section className="lw-idea-section">
-            <span className="lw-idea-q" style={{ fontWeight: 600, color: 'var(--lw-text-2)' }}>
+          {/* 4. 下周 */}
+          <section className="lw-stack" style={{ gap: 4 }}>
+            <span className="lw-section-title" style={{ fontSize: 13.5, paddingBottom: 4 }}>
               下周
             </span>
-            <AutoReviewTextarea
-              value={draft.nextWeek}
-              disabled={project.archived}
-              onChange={(v) => updateDraft({ nextWeek: v })}
-              onBlur={() => void flushSave()}
-              placeholder="下周最关键的 1~3 件事…"
-            />
+            <div className="lw-list">
+              {draft.nextWeekItems.map((text, idx) => (
+                <div key={`nw-${idx}`} className="lw-item-row" style={{ alignItems: 'center' }}>
+                  <span
+                    className="lw-bullet-slot lw-mono"
+                    style={{ fontSize: 12, color: 'var(--lw-muted)' }}
+                  >
+                    {idx + 1}.
+                  </span>
+                  <input
+                    className="lw-inline-input"
+                    style={{ flex: 1, padding: 0, fontSize: 14 }}
+                    disabled={project.archived}
+                    value={text}
+                    onChange={(e) => {
+                      const next = draft.nextWeekItems.map((s, i) =>
+                        i === idx ? e.target.value : s,
+                      )
+                      commitDraft({ ...draft, nextWeekItems: next })
+                    }}
+                    onBlur={() => void flushSave()}
+                  />
+                  {!project.archived && (
+                    <div className="lw-hover-actions">
+                      <button
+                        type="button"
+                        className="lw-icon-btn"
+                        style={{ height: 22, minWidth: 22, padding: 0 }}
+                        title="移除"
+                        onClick={() => {
+                          const next = draft.nextWeekItems.filter((_, i) => i !== idx)
+                          commitDraft({ ...draft, nextWeekItems: next }, true)
+                        }}
+                      >
+                        <IconX size={12} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+              {!project.archived && (
+                <form
+                  className="lw-item-row"
+                  style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+                  onSubmit={(e) => {
+                    e.preventDefault()
+                    const text = newNextItem.trim()
+                    if (!text) return
+                    setNewNextItem('')
+                    commitDraft(
+                      { ...draft, nextWeekItems: [...draft.nextWeekItems, text] },
+                      true,
+                    )
+                  }}
+                >
+                  <span className="lw-bullet-slot">
+                    <IconPlus size={14} />
+                  </span>
+                  <input
+                    className="lw-inline-input"
+                    style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+                    value={newNextItem}
+                    onChange={(e) => setNewNextItem(e.target.value)}
+                    placeholder="添加下周重点"
+                  />
+                </form>
+              )}
+            </div>
           </section>
         </div>
       )}

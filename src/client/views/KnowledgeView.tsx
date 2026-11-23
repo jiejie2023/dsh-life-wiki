@@ -6,7 +6,7 @@ import { IconExternal, IconPlus, IconSearch, IconX } from '../components/Icons.t
 
 interface KnowledgeViewProps {
   snapshot: BoardSnapshot
-  onOpenFile: (relPath: string) => void
+  onOpenFile: (relPath: string, opts?: { edit?: boolean }) => void
   onRunAction: RunActionFn
 }
 
@@ -76,16 +76,15 @@ export function KnowledgeView({
 
   return (
     <div className="lw-canvas">
-      {/* Subtabs + Search + Action */}
-      <div className="lw-between" style={{ alignItems: 'flex-end' }}>
-        <div className="lw-subtabs" style={{ flex: 1 }}>
+      {/* Continuous Hairline Tabs + Quiet Search + Action */}
+      <div className="lw-tabs-bar">
+        <div className="lw-subtabs">
           <button
             type="button"
             className={`lw-subtab ${subTab === 'wiki' ? 'active' : ''}`}
             onClick={() => setSubTab('wiki')}
           >
             Wiki
-            <span className="lw-muted">{wikiPages.length}</span>
           </button>
           <button
             type="button"
@@ -93,20 +92,30 @@ export function KnowledgeView({
             onClick={() => setSubTab('raw')}
           >
             原件库
-            <span className="lw-muted">{rawEntries.length}</span>
           </button>
         </div>
 
-        <div className="lw-row">
-          <div className="lw-capture" style={{ width: 185, padding: '4px 10px' }}>
+        <div className="lw-tabs-bar-right">
+          <div className="lw-diary-search">
             <IconSearch size={13} />
             <input
               className="lw-inline-input"
-              style={{ fontSize: 13, padding: '1px 0' }}
+              style={{ fontSize: 13, padding: 0 }}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               placeholder="搜索"
             />
+            {query && (
+              <button
+                type="button"
+                className="lw-icon-btn"
+                style={{ height: 20, minWidth: 20, padding: 0 }}
+                onClick={() => setQuery('')}
+                aria-label="清空搜索"
+              >
+                <IconX size={12} />
+              </button>
+            )}
           </div>
           {subTab === 'wiki' && (
             <button
@@ -138,7 +147,7 @@ export function KnowledgeView({
                     <div
                       className="lw-meta"
                       style={{
-                        marginTop: 2,
+                        marginTop: 3,
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -156,10 +165,10 @@ export function KnowledgeView({
       ) : (
         <div className="lw-stack" style={{ gap: 14 }}>
           {rawCategories.length > 1 && (
-            <div className="lw-row" style={{ gap: 6 }}>
+            <div className="lw-row" style={{ gap: 6, marginTop: -8, marginLeft: -8 }}>
               <button
                 type="button"
-                className={`lw-btn lw-btn-sm ${rawCategory === 'ALL' ? 'lw-btn-primary' : 'lw-btn-ghost'}`}
+                className={`lw-mode-tab ${rawCategory === 'ALL' ? 'active' : ''}`}
                 onClick={() => setRawCategory('ALL')}
               >
                 全部
@@ -168,7 +177,7 @@ export function KnowledgeView({
                 <button
                   key={cat}
                   type="button"
-                  className={`lw-btn lw-btn-sm ${rawCategory === cat ? 'lw-btn-primary' : 'lw-btn-ghost'}`}
+                  className={`lw-mode-tab ${rawCategory === cat ? 'active' : ''}`}
                   onClick={() => setRawCategory(cat)}
                 >
                   {cat}
@@ -185,7 +194,7 @@ export function KnowledgeView({
                 <div
                   key={entry.relPath}
                   className="lw-project-row"
-                  style={{ padding: '11px 12px' }}
+                  style={{ padding: '12px 12px' }}
                   onClick={() => onOpenFile(entry.openRelPath)}
                 >
                   <div className="lw-row" style={{ gap: 8, minWidth: 0, flex: 1 }}>
@@ -272,7 +281,11 @@ export function KnowledgeView({
               </div>
             </div>
             <div className="lw-panel-footer">
-              <button type="button" className="lw-btn lw-btn-ghost" onClick={() => setShowNewWiki(false)}>
+              <button
+                type="button"
+                className="lw-btn lw-btn-ghost"
+                onClick={() => setShowNewWiki(false)}
+              >
                 取消
               </button>
               <button type="submit" className="lw-btn lw-btn-primary">

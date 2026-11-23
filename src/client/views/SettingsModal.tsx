@@ -53,7 +53,7 @@ export function SettingsModal({
           <div className="lw-stack" style={{ gap: 8 }}>
             <div className="lw-between">
               <span className="lw-field-label" style={{ margin: 0 }}>
-                当前知识库（名称随本地文件夹名）
+                本地知识库
               </span>
               <button
                 type="button"
@@ -180,7 +180,7 @@ export function SettingsModal({
           {/* Custom Areas */}
           <div className="lw-stack" style={{ gap: 8 }}>
             <span className="lw-field-label" style={{ margin: 0 }}>
-              领域（area）
+              领域
             </span>
             <div className="lw-row" style={{ gap: 6 }}>
               {areas.map((a) => (

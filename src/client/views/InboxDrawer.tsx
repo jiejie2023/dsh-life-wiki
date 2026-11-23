@@ -8,7 +8,7 @@ interface InboxDrawerProps {
   snapshot: BoardSnapshot
   selectedDate: string
   onClose: () => void
-  onOpenFile: (relPath: string) => void
+  onOpenFile: (relPath: string, opts?: { edit?: boolean }) => void
   onRunAction: RunActionFn
 }
 
@@ -81,18 +81,15 @@ export function InboxDrawer({
     <div className="lw-backdrop" onClick={onClose}>
       <div className="lw-drawer lw-drawer-sm" onClick={(e) => e.stopPropagation()}>
         <div className="lw-panel-header">
-          <div className="lw-row" style={{ gap: 8 }}>
-            <strong style={{ fontSize: 15 }}>收件箱</strong>
-            {pending.length > 0 && <span className="lw-muted">{pending.length}</span>}
-          </div>
+          <strong style={{ fontSize: 15 }}>收件箱</strong>
           <div className="lw-row" style={{ gap: 2 }}>
             <button
               type="button"
               className="lw-icon-btn"
-              title="打开 inbox.md"
+              title="编辑 inbox.md"
               onClick={() => {
                 onClose()
-                onOpenFile(snapshot.inbox.relPath)
+                onOpenFile(snapshot.inbox.relPath, { edit: true })
               }}
             >
               <IconFile size={14} />
@@ -125,6 +122,7 @@ export function InboxDrawer({
                     <button
                       type="button"
                       className="lw-check"
+                      style={{ marginTop: 3 }}
                       onClick={() => void handleToggle(item.lineIndex)}
                     />
                     <div className="lw-item-title">{item.text}</div>

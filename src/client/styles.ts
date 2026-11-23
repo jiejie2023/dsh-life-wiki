@@ -537,6 +537,16 @@ const CSS = `
   animation: lwCheckPop 0.22s var(--lw-ease);
 }
 
+.lw-check.missed {
+  background: var(--lw-danger-soft);
+  border-color: rgba(217, 67, 67, 0.35);
+  color: var(--lw-danger);
+}
+
+.lw-check.missed:hover {
+  border-color: var(--lw-danger);
+}
+
 /* Clean list rows */
 .lw-list {
   display: flex;

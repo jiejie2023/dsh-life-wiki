@@ -477,7 +477,7 @@ export function LifeWikiApp() {
               snapshot={snapshot}
               selectedWeek={selectedWeek ?? snapshot.reviewCenter.week}
               onWeekChange={(nextWeek) => setSelectedWeek(nextWeek)}
-              onOpenFile={(rel) => setDrawerFile({ path: rel })}
+              onOpenFile={(rel, opts) => setDrawerFile({ path: rel, edit: opts?.edit })}
               onRunAction={runAction}
             />
           )}
@@ -485,7 +485,7 @@ export function LifeWikiApp() {
           {activeTab === 'knowledge' && (
             <KnowledgeView
               snapshot={snapshot}
-              onOpenFile={(rel) => setDrawerFile({ path: rel })}
+              onOpenFile={(rel, opts) => setDrawerFile({ path: rel, edit: opts?.edit })}
               onRunAction={runAction}
             />
           )}
@@ -497,7 +497,7 @@ export function LifeWikiApp() {
           snapshot={snapshot}
           selectedDate={selectedDate}
           onClose={() => setInboxOpen(false)}
-          onOpenFile={(rel) => setDrawerFile({ path: rel })}
+          onOpenFile={(rel, opts) => setDrawerFile({ path: rel, edit: opts?.edit })}
           onRunAction={runAction}
         />
       )}
