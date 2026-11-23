@@ -6,6 +6,7 @@ import type {
   ProjectStatus,
   ReviewStatus,
   TaskFileStatus,
+  TaskPriority,
   VaultSettings,
 } from '../shared/types.ts'
 
@@ -118,12 +119,14 @@ export const api = {
 
   createTaskFile: (projectName: string, date?: string) =>
     apiPost<{ relPath: string }>('/tasks/create', { projectName, date }),
-  addTask: (projectName: string, text: string, date?: string) =>
-    apiPost<{ relPath: string }>('/tasks/add', { projectName, text, date }),
+  addTask: (projectName: string, text: string, date?: string, priority?: TaskPriority) =>
+    apiPost<{ relPath: string }>('/tasks/add', { projectName, text, date, priority }),
   toggleTask: (relPath: string, lineIndex: number, minutes?: number) =>
     apiPost<{ updated: boolean }>('/tasks/toggle', { relPath, lineIndex, minutes }),
   setTaskMinutes: (relPath: string, lineIndex: number, minutes: number | null) =>
     apiPost<{ updated: boolean }>('/tasks/minutes', { relPath, lineIndex, minutes }),
+  setTaskPriority: (relPath: string, lineIndex: number, priority: TaskPriority) =>
+    apiPost<{ updated: boolean }>('/tasks/priority', { relPath, lineIndex, priority }),
   updateTaskStatus: (relPath: string, status: TaskFileStatus) =>
     apiPost<{ updated: boolean }>('/tasks/status', { relPath, status }),
   appendTaskEntry: (relPath: string, section: 'log' | 'reflection', text: string) =>

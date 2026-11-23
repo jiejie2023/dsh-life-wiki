@@ -1,5 +1,6 @@
 export type ProjectStatus = 'idea' | 'cancel' | 'todo' | 'doing' | 'pause' | 'done'
 export type TaskFileStatus = 'todo' | 'doing' | 'done'
+export type TaskPriority = 'high' | 'medium' | 'low'
 export type ReviewStatus = 'draft' | 'final'
 
 export interface DirectoryInspection {
@@ -24,6 +25,7 @@ export interface TaskItem {
   lineIndex: number
   checked: boolean
   text: string
+  priority: TaskPriority
   minutes: number | null
   fromDate: string | null
   rawLine: string

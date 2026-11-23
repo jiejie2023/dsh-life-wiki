@@ -6,6 +6,7 @@ import type {
   ReviewStatus,
   TaskFileStatus,
   TaskItem,
+  TaskPriority,
 } from '../shared/types.ts'
 
 export interface FrontmatterResult {
@@ -166,6 +167,31 @@ export function parseFromDate(text: string): string | null {
   return match ? match[1]! : null
 }
 
+const PRIORITY_PREFIX_RE = /^\s*(?:\[\s*(高|中|低|P1|P2|P3)\s*\]|【\s*(高|中|低)\s*】)\s*/i
+
+export function priorityToLabel(priority: TaskPriority): '高' | '中' | '低' {
+  return priority === 'high' ? '高' : priority === 'low' ? '低' : '中'
+}
+
+export function parseTaskPriority(text: string): TaskPriority {
+  const match = PRIORITY_PREFIX_RE.exec(text)
+  const token = (match?.[1] ?? match?.[2] ?? '').toUpperCase()
+  if (token === '高' || token === 'P1') return 'high'
+  if (token === '低' || token === 'P3') return 'low'
+  return 'medium'
+}
+
+export function stripTaskPriority(text: string): string {
+  return text.replace(PRIORITY_PREFIX_RE, '').trimStart()
+}
+
+export function setCheckboxPriority(line: string, priority: TaskPriority): string {
+  const match = /^(\s*-\s+\[[ xX]\]\s+)(.*)$/.exec(line)
+  if (!match) throw new Error(`Line is not a markdown checkbox: ${line}`)
+  const body = stripTaskPriority(match[2]!)
+  return `${match[1]}[${priorityToLabel(priority)}] ${body}`
+}
+
 export function parseTaskFile(content: string): {
   status: TaskFileStatus | null
   valid: boolean
@@ -204,6 +230,7 @@ export function parseTaskFile(content: string): {
         lineIndex: i,
         checked: match[1]!.toLowerCase() === 'x',
         text,
+        priority: parseTaskPriority(text),
         minutes: parseTaskDuration(text),
         fromDate: parseFromDate(text),
         rawLine,

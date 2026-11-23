@@ -24,6 +24,7 @@ import type {
   ReviewSummary,
   TaskFileStatus,
   TaskFileSummary,
+  TaskPriority,
   WeekProjectMetrics,
   WikiPageSummary,
 } from '../shared/types.ts'
@@ -44,10 +45,13 @@ import {
   parseProjectStatus,
   parseReviewStatus,
   parseTaskFile,
+  priorityToLabel,
   replaceSectionBody,
   resolveVaultPath,
   setCheckboxMinutes,
+  setCheckboxPriority,
   splitLines,
+  stripTaskPriority,
   toggleCheckboxLine,
   updateFrontmatterFields,
 } from './markdown.ts'
@@ -83,7 +87,13 @@ export interface LifeWikiEngine {
   createTaskFile(projectName: string, dateStr?: string): Promise<string>
   toggleTask(relPath: string, lineIndex: number, minutes?: number): Promise<void>
   setTaskMinutes(relPath: string, lineIndex: number, minutes: number | null): Promise<void>
-  addTask(projectName: string, text: string, dateStr?: string): Promise<string>
+  setTaskPriority(relPath: string, lineIndex: number, priority: TaskPriority): Promise<void>
+  addTask(
+    projectName: string,
+    text: string,
+    dateStr?: string,
+    priority?: TaskPriority,
+  ): Promise<string>
   updateTaskFileStatus(relPath: string, status: TaskFileStatus): Promise<void>
   appendTaskEntry(relPath: string, section: 'log' | 'reflection', text: string): Promise<void>
   createIdea(title: string, ideaText: string): Promise<string>
@@ -942,12 +952,21 @@ export function createLifeWikiEngine(
     return relPath
   }
 
-  async function addTask(projectName: string, text: string, dateStr?: string): Promise<string> {
-    const cleaned = text.trim()
+  async function addTask(
+    projectName: string,
+    text: string,
+    dateStr?: string,
+    priority: TaskPriority = 'medium',
+  ): Promise<string> {
+    const cleaned = stripTaskPriority(text.trim())
     if (!cleaned) throw new Error('任务内容不能为空')
     const relPath = await createTaskFile(projectName, dateStr)
     const { content } = await readVaultFile(relPath)
-    const updated = appendLineToSection(content, '任务', `- [ ] ${cleaned}`)
+    const updated = appendLineToSection(
+      content,
+      '任务',
+      `- [ ] [${priorityToLabel(priority)}] ${cleaned}`,
+    )
     await writeVaultFile(relPath, updated)
     return relPath
   }
@@ -993,6 +1012,16 @@ export function createLifeWikiEngine(
         throw new Error(`Invalid task line index: ${lineIndex}`)
       }
       lines[lineIndex] = setCheckboxMinutes(lines[lineIndex]!, minutes)
+      await writeVaultFile(relPath, joinLines(lines, eol))
+    },
+
+    async setTaskPriority(relPath, lineIndex, priority) {
+      const { content } = await readVaultFile(relPath)
+      const { lines, eol } = splitLines(content)
+      if (lineIndex < 0 || lineIndex >= lines.length) {
+        throw new Error(`Invalid task line index: ${lineIndex}`)
+      }
+      lines[lineIndex] = setCheckboxPriority(lines[lineIndex]!, priority)
       await writeVaultFile(relPath, joinLines(lines, eol))
     },
 

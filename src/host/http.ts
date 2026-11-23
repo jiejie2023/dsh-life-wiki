@@ -9,6 +9,7 @@ import type {
   ProjectStatus,
   ReviewStatus,
   TaskFileStatus,
+  TaskPriority,
 } from '../shared/types.ts'
 import type { SettingsStore } from './settings.ts'
 
@@ -287,14 +288,29 @@ export function createHttpHandler(
             )
             return { updated: true }
 
-          case '/api/life-wiki/tasks/add':
+          case '/api/life-wiki/tasks/priority': {
+            const p = String(body.priority ?? 'medium')
+            const validP: TaskPriority = p === 'high' || p === 'low' ? p : 'medium'
+            await engine.setTaskPriority(
+              String(body.relPath ?? ''),
+              Number(body.lineIndex),
+              validP,
+            )
+            return { updated: true }
+          }
+
+          case '/api/life-wiki/tasks/add': {
+            const p = String(body.priority ?? 'medium')
+            const validP: TaskPriority = p === 'high' || p === 'low' ? p : 'medium'
             return {
               relPath: await engine.addTask(
                 String(body.projectName ?? ''),
                 String(body.text ?? ''),
                 typeof body.date === 'string' ? body.date : undefined,
+                validP,
               ),
             }
+          }
 
           case '/api/life-wiki/tasks/status':
             await engine.updateTaskFileStatus(

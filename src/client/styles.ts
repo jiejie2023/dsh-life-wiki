@@ -949,6 +949,70 @@ const CSS = `
   background: var(--lw-accent);
 }
 
+/* Single-character filled task priority badges (高 / 中 / 低) */
+.lw-prio-btn {
+  appearance: none;
+  border: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.12s, filter 0.12s;
+}
+
+.lw-prio-btn:hover {
+  filter: brightness(0.95);
+  transform: scale(1.04);
+}
+
+.lw-prio-btn.high {
+  background: rgba(229, 72, 77, 0.14);
+  color: #d9383e;
+}
+
+.lw-prio-btn.medium {
+  background: rgba(240, 152, 25, 0.15);
+  color: #c27400;
+}
+
+.lw-prio-btn.low {
+  background: rgba(38, 120, 246, 0.12);
+  color: #1f6ae0;
+}
+
+.lw-root[data-lw-theme="dark"] .lw-prio-btn.high {
+  background: rgba(242, 99, 104, 0.2);
+  color: #ff8589;
+}
+
+.lw-root[data-lw-theme="dark"] .lw-prio-btn.medium {
+  background: rgba(245, 178, 66, 0.2);
+  color: #f6c05e;
+}
+
+.lw-root[data-lw-theme="dark"] .lw-prio-btn.low {
+  background: rgba(76, 146, 255, 0.2);
+  color: #82b5ff;
+}
+
+.lw-prio-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px;
+  border-radius: 7px;
+  background: var(--lw-surface);
+  box-shadow: var(--lw-shadow-lg);
+}
+
 /* Diary photos */
 .lw-photo-grid {
   display: flex;

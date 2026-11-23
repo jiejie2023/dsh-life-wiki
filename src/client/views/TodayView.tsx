@@ -1,5 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import type { BoardSnapshot, ProjectTaskGroup, TaskFileStatus } from '../../shared/types.ts'
+import type {
+  BoardSnapshot,
+  ProjectTaskGroup,
+  TaskFileStatus,
+  TaskPriority,
+} from '../../shared/types.ts'
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
 import {
@@ -31,6 +36,22 @@ const TASK_STATUS_OPTIONS: Array<{ value: TaskFileStatus; label: string }> = [
   { value: 'done', label: '已完成' },
 ]
 
+const PRIORITY_OPTIONS: Array<{ value: TaskPriority; label: string }> = [
+  { value: 'high', label: '高' },
+  { value: 'medium', label: '中' },
+  { value: 'low', label: '低' },
+]
+
+const PRIORITY_ORDER: Record<TaskPriority, number> = {
+  high: 0,
+  medium: 1,
+  low: 2,
+}
+
+function priorityLabel(p: TaskPriority): string {
+  return p === 'high' ? '高' : p === 'low' ? '低' : '中'
+}
+
 function shiftDate(isoDate: string, deltaDays: number): string {
   const [y, m, d] = isoDate.split('-').map(Number)
   const dt = new Date(Date.UTC(y!, m! - 1, d! + deltaDays))
@@ -54,10 +75,13 @@ function cleanDisplayBullet(line: string): string {
 }
 
 function cleanTaskDisplayText(text: string, hasMinutes: boolean): string {
-  if (!hasMinutes) return text
-  return text
-    .replace(/\s*[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]\s*$/i, '')
-    .trimEnd()
+  let out = text.replace(/^\s*(?:\[\s*(高|中|低|P1|P2|P3)\s*\]|【\s*(高|中|低)\s*】)\s*/i, '')
+  if (hasMinutes) {
+    out = out
+      .replace(/\s*[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]\s*$/i, '')
+      .trimEnd()
+  }
+  return out
 }
 
 export function TodayView({
@@ -70,6 +94,9 @@ export function TodayView({
 }: TodayViewProps) {
   const [diaryText, setDiaryText] = useState('')
   const [newTaskInputs, setNewTaskInputs] = useState<Record<string, string>>({})
+  const [newTaskPriority, setNewTaskPriority] = useState<Record<string, TaskPriority>>({})
+  const [newPrioOpenProject, setNewPrioOpenProject] = useState<string | null>(null)
+  const [prioOpenKey, setPrioOpenKey] = useState<string | null>(null)
   const [durationOpenKey, setDurationOpenKey] = useState<string | null>(null)
   const [customMinutes, setCustomMinutes] = useState('')
   const [statusMenuProject, setStatusMenuProject] = useState<string | null>(null)
@@ -85,7 +112,7 @@ export function TodayView({
 
   // Close floating menus on outside click or Esc
   useEffect(() => {
-    if (!statusMenuProject && !durationOpenKey) return
+    if (!statusMenuProject && !durationOpenKey && !prioOpenKey && !newPrioOpenProject) return
     const onPointerDown = (e: MouseEvent) => {
       const target = e.target as HTMLElement | null
       if (statusMenuProject && !target?.closest('[data-status-menu]')) {
@@ -94,11 +121,19 @@ export function TodayView({
       if (durationOpenKey && !target?.closest('[data-duration-menu]')) {
         setDurationOpenKey(null)
       }
+      if (prioOpenKey && !target?.closest('[data-prio-menu]')) {
+        setPrioOpenKey(null)
+      }
+      if (newPrioOpenProject && !target?.closest('[data-new-prio-menu]')) {
+        setNewPrioOpenProject(null)
+      }
     }
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setStatusMenuProject(null)
         setDurationOpenKey(null)
+        setPrioOpenKey(null)
+        setNewPrioOpenProject(null)
       }
     }
     document.addEventListener('mousedown', onPointerDown)
@@ -107,7 +142,7 @@ export function TodayView({
       document.removeEventListener('mousedown', onPointerDown)
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [statusMenuProject, durationOpenKey])
+  }, [statusMenuProject, durationOpenKey, prioOpenKey, newPrioOpenProject])
 
   const { activeGroups, idleGroups } = useMemo(() => {
     const active: ProjectTaskGroup[] = []
@@ -205,11 +240,38 @@ export function TodayView({
     })
   }
 
+  const handleSetPriority = async (
+    group: ProjectTaskGroup,
+    lineIndex: number,
+    priority: TaskPriority,
+  ) => {
+    setPrioOpenKey(null)
+    await onRunAction(() => api.setTaskPriority(group.fileRelPath, lineIndex, priority), {
+      optimistic: (prev) => ({
+        ...prev,
+        today: {
+          ...prev.today,
+          groups: prev.today.groups.map((g) =>
+            g.fileRelPath !== group.fileRelPath
+              ? g
+              : {
+                  ...g,
+                  tasks: g.tasks.map((t) =>
+                    t.lineIndex === lineIndex ? { ...t, priority } : t,
+                  ),
+                },
+          ),
+        },
+      }),
+    })
+  }
+
   const handleAddTask = async (projectName: string) => {
     const text = (newTaskInputs[projectName] ?? '').trim()
     if (!text) return
+    const priority = newTaskPriority[projectName] ?? 'medium'
     setNewTaskInputs((prev) => ({ ...prev, [projectName]: '' }))
-    await onRunAction(() => api.addTask(projectName, text, selectedDate), {
+    await onRunAction(() => api.addTask(projectName, text, selectedDate, priority), {
       optimistic: (prev) => ({
         ...prev,
         today: {
@@ -224,12 +286,13 @@ export function TodayView({
                   tasks: [
                     ...g.tasks,
                     {
-                      lineIndex: -Date.now(),
+                      lineIndex: Date.now(),
                       checked: false,
-                      text,
+                      text: `[${priorityLabel(priority)}] ${text}`,
+                      priority,
                       minutes: null,
                       fromDate: null,
-                      rawLine: `- [ ] ${text}`,
+                      rawLine: `- [ ] [${priorityLabel(priority)}] ${text}`,
                     },
                   ],
                 },
@@ -256,7 +319,8 @@ export function TodayView({
   }
 
   const handleAppendNote = async (group: ProjectTaskGroup, section: 'log' | 'reflection') => {
-    const raw = section === 'log' ? logInputs[group.projectName] : reflectionInputs[group.projectName]
+    const raw =
+      section === 'log' ? logInputs[group.projectName] : reflectionInputs[group.projectName]
     const text = (raw ?? '').trim()
     if (!text) return
     if (section === 'log') {
@@ -419,6 +483,15 @@ export function TodayView({
               TASK_STATUS_OPTIONS.find((o) => o.value === curStatus)?.label ?? '进行中'
             const menuOpen = statusMenuProject === group.projectName
 
+            // Sort strictly by priority (高 -> 中 -> 低), tie-break by original order
+            const sortedTasks = [...group.tasks].sort(
+              (a, b) =>
+                PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority] ||
+                a.lineIndex - b.lineIndex,
+            )
+
+            const draftPrio = newTaskPriority[group.projectName] ?? 'medium'
+
             return (
               <section key={group.projectName} className="lw-stack" style={{ gap: 6 }}>
                 {/* Section Header */}
@@ -451,7 +524,7 @@ export function TodayView({
 
                     {group.exists && (
                       <>
-                        {/* Linear-style Status Dropdown */}
+                        {/* Status Dropdown */}
                         <div className="lw-menu-wrap" data-status-menu>
                           <button
                             type="button"
@@ -501,9 +574,10 @@ export function TodayView({
                 {/* Single active view: 任务 / 日志 / 反思 */}
                 {mode === 'task' ? (
                   <div className="lw-list">
-                    {group.tasks.map((task) => {
+                    {sortedTasks.map((task) => {
                       const rowKey = `${group.fileRelPath}:${task.lineIndex}`
                       const durOpen = durationOpenKey === rowKey
+                      const prioOpen = prioOpenKey === rowKey
                       const displayText = cleanTaskDisplayText(task.text, task.minutes !== null)
 
                       const applyDuration = (mins: number | null) => {
@@ -515,10 +589,11 @@ export function TodayView({
                       }
 
                       return (
-                        <div key={task.lineIndex} className="lw-item-row">
+                        <div key={task.lineIndex} className="lw-item-row" style={{ alignItems: 'center' }}>
                           <button
                             type="button"
                             className={`lw-check ${task.checked ? 'checked' : ''}`}
+                            style={{ marginTop: 0 }}
                             onClick={() => void handleToggleTask(group, task.lineIndex)}
                             aria-label={task.checked ? '取消完成' : '标记完成'}
                           >
@@ -534,85 +609,120 @@ export function TodayView({
                             )}
                           </div>
 
-                          <div data-duration-menu>
-                            {durOpen ? (
-                              <form
-                                className="lw-popover-row"
-                                onSubmit={(e) => {
-                                  e.preventDefault()
-                                  const parsed = Number(customMinutes.trim())
-                                  if (Number.isFinite(parsed) && parsed > 0) {
-                                    applyDuration(parsed)
-                                  }
-                                }}
-                              >
-                                {[15, 30, 45, 60].map((m) => (
-                                  <button
-                                    key={m}
-                                    type="button"
-                                    className="lw-pop-chip"
-                                    onClick={() => applyDuration(m)}
-                                  >
-                                    {m} min
-                                  </button>
-                                ))}
-                                <input
-                                  className="lw-inline-input"
-                                  style={{
-                                    width: 44,
-                                    fontSize: 12,
-                                    padding: '2px 4px',
-                                    textAlign: 'center',
-                                  }}
-                                  placeholder="min"
-                                  value={customMinutes}
-                                  onChange={(e) => setCustomMinutes(e.target.value)}
-                                  autoFocus
-                                />
-                                {task.minutes !== null && (
-                                  <button
-                                    type="button"
-                                    className="lw-pop-chip"
-                                    title="清除耗时"
-                                    onClick={() => applyDuration(null)}
-                                  >
-                                    清除
-                                  </button>
-                                )}
-                              </form>
-                            ) : task.minutes !== null ? (
-                              <button
-                                type="button"
-                                className="lw-time-btn"
-                                title="点击修改耗时"
-                                onClick={() => {
-                                  setCustomMinutes(String(task.minutes ?? ''))
-                                  setDurationOpenKey(rowKey)
-                                }}
-                              >
-                                {task.minutes} min
-                              </button>
-                            ) : (
-                              <div className="lw-hover-actions">
+                          {/* Right aligned: [高/中/低] + [20 min] */}
+                          <div className="lw-row" style={{ gap: 8, flexShrink: 0 }}>
+                            <div data-prio-menu style={{ display: 'inline-flex', alignItems: 'center' }}>
+                              {prioOpen ? (
+                                <div className="lw-prio-picker">
+                                  {PRIORITY_OPTIONS.map((opt) => (
+                                    <button
+                                      key={opt.value}
+                                      type="button"
+                                      className={`lw-prio-btn ${opt.value}`}
+                                      onClick={() =>
+                                        void handleSetPriority(group, task.lineIndex, opt.value)
+                                      }
+                                    >
+                                      {opt.label}
+                                    </button>
+                                  ))}
+                                </div>
+                              ) : (
                                 <button
                                   type="button"
-                                  className="lw-icon-btn"
-                                  style={{ height: 24, minWidth: 24, padding: '0 5px' }}
-                                  title="记录用时"
+                                  className={`lw-prio-btn ${task.priority}`}
+                                  title="点击修改优先级"
+                                  onClick={() => setPrioOpenKey(rowKey)}
+                                >
+                                  {priorityLabel(task.priority)}
+                                </button>
+                              )}
+                            </div>
+
+                            <div
+                              data-duration-menu
+                              style={{ minWidth: 48, display: 'flex', justifyContent: 'flex-end' }}
+                            >
+                              {durOpen ? (
+                                <form
+                                  className="lw-popover-row"
+                                  onSubmit={(e) => {
+                                    e.preventDefault()
+                                    const parsed = Number(customMinutes.trim())
+                                    if (Number.isFinite(parsed) && parsed > 0) {
+                                      applyDuration(parsed)
+                                    }
+                                  }}
+                                >
+                                  {[15, 30, 45, 60].map((m) => (
+                                    <button
+                                      key={m}
+                                      type="button"
+                                      className="lw-pop-chip"
+                                      onClick={() => applyDuration(m)}
+                                    >
+                                      {m} min
+                                    </button>
+                                  ))}
+                                  <input
+                                    className="lw-inline-input"
+                                    style={{
+                                      width: 44,
+                                      fontSize: 12,
+                                      padding: '2px 4px',
+                                      textAlign: 'center',
+                                    }}
+                                    placeholder="min"
+                                    value={customMinutes}
+                                    onChange={(e) => setCustomMinutes(e.target.value)}
+                                    autoFocus
+                                  />
+                                  {task.minutes !== null && (
+                                    <button
+                                      type="button"
+                                      className="lw-pop-chip"
+                                      title="清除耗时"
+                                      onClick={() => applyDuration(null)}
+                                    >
+                                      清除
+                                    </button>
+                                  )}
+                                </form>
+                              ) : task.minutes !== null ? (
+                                <button
+                                  type="button"
+                                  className="lw-time-btn"
+                                  title="点击修改耗时"
                                   onClick={() => {
-                                    setCustomMinutes('')
+                                    setCustomMinutes(String(task.minutes ?? ''))
                                     setDurationOpenKey(rowKey)
                                   }}
                                 >
-                                  <IconClock size={13} />
+                                  {task.minutes} min
                                 </button>
-                              </div>
-                            )}
+                              ) : (
+                                <div className="lw-hover-actions">
+                                  <button
+                                    type="button"
+                                    className="lw-icon-btn"
+                                    style={{ height: 24, minWidth: 24, padding: '0 5px' }}
+                                    title="记录用时"
+                                    onClick={() => {
+                                      setCustomMinutes('')
+                                      setDurationOpenKey(rowKey)
+                                    }}
+                                  >
+                                    <IconClock size={13} />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       )
                     })}
 
+                    {/* Add Task Row with inline mandatory priority picker */}
                     <form
                       className="lw-item-row"
                       style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
@@ -636,6 +746,42 @@ export function TodayView({
                         }
                         placeholder="添加任务"
                       />
+                      <div
+                        className="lw-row"
+                        style={{ gap: 8, flexShrink: 0 }}
+                        data-new-prio-menu
+                      >
+                        {newPrioOpenProject === group.projectName ? (
+                          <div className="lw-prio-picker">
+                            {PRIORITY_OPTIONS.map((opt) => (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                className={`lw-prio-btn ${opt.value}`}
+                                onClick={() => {
+                                  setNewTaskPriority((prev) => ({
+                                    ...prev,
+                                    [group.projectName]: opt.value,
+                                  }))
+                                  setNewPrioOpenProject(null)
+                                }}
+                              >
+                                {opt.label}
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            className={`lw-prio-btn ${draftPrio}`}
+                            title="新任务优先级（点击切换高/中/低）"
+                            onClick={() => setNewPrioOpenProject(group.projectName)}
+                          >
+                            {priorityLabel(draftPrio)}
+                          </button>
+                        )}
+                        <span style={{ minWidth: 48 }} />
+                      </div>
                     </form>
                   </div>
                 ) : mode === 'log' ? (

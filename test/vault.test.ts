@@ -89,16 +89,24 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
       })
       assert.equal(projHome, 'projects/播客剪辑工具/播客剪辑工具.md')
 
-      // 3. Add and complete tasks with minutes + append diary
-      const taskFile = await engine.addTask('播客剪辑工具', '调研 ffmpeg 静音检测参数', '2026-11-24')
+      // 3. Add and complete tasks with priority & minutes + append diary
+      const taskFile = await engine.addTask(
+        '播客剪辑工具',
+        '调研 ffmpeg 静音检测参数',
+        '2026-11-24',
+        'high',
+      )
       snap = await engine.getSnapshot('2026-11-24')
       const grp = snap.today.groups.find((g) => g.projectName === '播客剪辑工具')!
+      assert.equal(grp.tasks[0]?.priority, 'high')
+      await engine.setTaskPriority(taskFile, grp.tasks[0]!.lineIndex, 'low')
       await engine.toggleTask(taskFile, grp.tasks[0]!.lineIndex, 45)
       await engine.setTaskMinutes(taskFile, grp.tasks[0]!.lineIndex, 60)
       const taskRaw60 = await readFile(join(dir, taskFile), 'utf8')
-      assert.match(taskRaw60, /（60 min）/)
+      assert.match(taskRaw60, /\[低\].*（60 min）/)
       snap = await engine.getSnapshot('2026-11-24')
       assert.equal(snap.today.groups.find((g) => g.projectName === '播客剪辑工具')?.totalMinutes, 60)
+      assert.equal(snap.today.groups.find((g) => g.projectName === '播客剪辑工具')?.tasks[0]?.priority, 'low')
       await engine.setTaskMinutes(taskFile, grp.tasks[0]!.lineIndex, 45)
       await engine.appendDiary('今天推进了播客工具调研，效率不错。', '2026-11-24', '21:10')
 
