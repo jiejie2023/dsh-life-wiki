@@ -1,7 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react'
+import {
+  cleanTaskDisplayText,
+  normalizePriority,
+  priorityToLabel as priorityLabel,
+  sortTasks,
+  stripTaskPriority,
+} from '../../shared/taskFormat.ts'
 import type {
   ProjectTaskGroup,
   TaskFileStatus,
+  TaskItem,
   TaskPriority,
 } from '../../shared/types.ts'
 import {
@@ -10,8 +18,11 @@ import {
   IconClock,
   IconFile,
   IconPlus,
+  IconX,
 } from './Icons.tsx'
 import { InlineText } from './MarkdownView.tsx'
+
+export { normalizePriority, priorityLabel, sortTasks }
 
 export const TASK_STATUS_OPTIONS: Array<{ value: TaskFileStatus; label: string }> = [
   { value: 'todo', label: '未开始' },
@@ -25,32 +36,8 @@ export const PRIORITY_OPTIONS: Array<{ value: TaskPriority; label: string }> = [
   { value: 'low', label: '低' },
 ]
 
-const PRIORITY_ORDER: Record<TaskPriority, number> = {
-  high: 0,
-  medium: 1,
-  low: 2,
-}
-
-export function normalizePriority(p: unknown): TaskPriority {
-  return p === 'high' || p === 'low' ? p : 'medium'
-}
-
-export function priorityLabel(p: TaskPriority): string {
-  return p === 'high' ? '高' : p === 'low' ? '低' : '中'
-}
-
 function cleanDisplayBullet(line: string): string {
   return line.replace(/^\s*[-*•·]+\s+/, '').trim()
-}
-
-function cleanTaskDisplayText(text: string, hasMinutes: boolean): string {
-  let out = text.replace(/^\s*(?:\[\s*(高|中|低|P1|P2|P3)\s*\]|【\s*(高|中|低)\s*】)\s*/i, '')
-  if (hasMinutes) {
-    out = out
-      .replace(/\s*[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]\s*$/i, '')
-      .trimEnd()
-  }
-  return out
 }
 
 export interface ProjectTaskPanelProps {
@@ -64,6 +51,8 @@ export interface ProjectTaskPanelProps {
   onToggleTask: (group: ProjectTaskGroup, lineIndex: number, minutes?: number) => void
   onSetMinutes: (group: ProjectTaskGroup, lineIndex: number, minutes: number | null) => void
   onSetPriority: (group: ProjectTaskGroup, lineIndex: number, priority: TaskPriority) => void
+  onUpdateTaskText: (group: ProjectTaskGroup, lineIndex: number, text: string) => void
+  onDeleteTask: (group: ProjectTaskGroup, lineIndex: number) => void
   onAddTask: (projectName: string, text: string, priority: TaskPriority) => void
   onSelectStatus: (group: ProjectTaskGroup, next: TaskFileStatus) => void
   onAppendNote: (group: ProjectTaskGroup, section: 'log' | 'reflection', text: string) => void
@@ -79,6 +68,8 @@ export function ProjectTaskPanel({
   onToggleTask,
   onSetMinutes,
   onSetPriority,
+  onUpdateTaskText,
+  onDeleteTask,
   onAddTask,
   onSelectStatus,
   onAppendNote,
@@ -93,10 +84,15 @@ export function ProjectTaskPanel({
   const [prioOpenKey, setPrioOpenKey] = useState<string | null>(null)
   const [durationOpenKey, setDurationOpenKey] = useState<string | null>(null)
   const [customMinutes, setCustomMinutes] = useState('')
+  const [editingLineKey, setEditingLineKey] = useState<string | null>(null)
+  const [editingDraft, setEditingDraft] = useState('')
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [logInput, setLogInput] = useState('')
   const [reflectionInput, setReflectionInput] = useState('')
   const addInputRef = useRef<HTMLInputElement>(null)
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null)
+  const editOrigRef = useRef('')
+  const editHandledRef = useRef(false)
 
   useEffect(() => {
     setMode(group.tasks.length === 0 && group.logs.length > 0 ? 'log' : 'task')
@@ -105,10 +101,66 @@ export function ProjectTaskPanel({
     setPrioOpenKey(null)
     setDurationOpenKey(null)
     setCustomMinutes('')
+    setEditingLineKey(null)
+    setEditingDraft('')
     setStatusMenuOpen(false)
     setLogInput('')
     setReflectionInput('')
   }, [group.fileRelPath])
+
+  useEffect(() => {
+    if (mode !== 'task') {
+      setEditingLineKey(null)
+      setEditingDraft('')
+    }
+  }, [mode])
+
+  useEffect(() => {
+    if (!editingLineKey || !editTextareaRef.current) return
+    const el = editTextareaRef.current
+    el.focus()
+    const end = el.value.length
+    el.setSelectionRange(end, end)
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [editingLineKey])
+
+  useEffect(() => {
+    if (!editingLineKey || !editTextareaRef.current) return
+    const el = editTextareaRef.current
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [editingLineKey, editingDraft])
+
+  const startEditTask = (rowKey: string, displayText: string) => {
+    if (readOnly) return
+    if (typeof window !== 'undefined' && window.getSelection()?.toString()) return
+    editHandledRef.current = false
+    editOrigRef.current = displayText
+    setStatusMenuOpen(false)
+    setDurationOpenKey(null)
+    setPrioOpenKey(null)
+    setNewPrioOpen(false)
+    setEditingLineKey(rowKey)
+    setEditingDraft(displayText)
+  }
+
+  const cancelEditTask = () => {
+    editHandledRef.current = true
+    setEditingLineKey(null)
+    setEditingDraft('')
+  }
+
+  const commitEditTask = (task: TaskItem) => {
+    if (editHandledRef.current) return
+    editHandledRef.current = true
+    const trimmed = editingDraft.replace(/\r?\n/g, ' ').trim()
+    setEditingLineKey(null)
+    setEditingDraft('')
+    if (!trimmed || !stripTaskPriority(trimmed).trim()) return
+    if (trimmed === editOrigRef.current.trim()) return
+    onUpdateTaskText(group, task.lineIndex, trimmed)
+  }
 
   useEffect(() => {
     if (autoFocusAdd && mode === 'task') {
@@ -145,11 +197,7 @@ export function ProjectTaskPanel({
   const curStatusLabel =
     TASK_STATUS_OPTIONS.find((o) => o.value === curStatus)?.label ?? '进行中'
 
-  const sortedTasks = [...group.tasks].sort(
-    (a, b) =>
-      PRIORITY_ORDER[normalizePriority(a.priority)] -
-        PRIORITY_ORDER[normalizePriority(b.priority)] || a.lineIndex - b.lineIndex,
-  )
+  const sortedTasks = sortTasks(group.tasks)
 
   const hasLeftHeader = Boolean(title || headerLeft)
 
@@ -263,6 +311,7 @@ export function ProjectTaskPanel({
             const rowKey = `${group.fileRelPath}:${task.lineIndex}`
             const durOpen = durationOpenKey === rowKey
             const prioOpen = prioOpenKey === rowKey
+            const isEditing = editingLineKey === rowKey && !readOnly
             const taskPrio = normalizePriority(task.priority)
             const displayText = cleanTaskDisplayText(task.text, task.minutes !== null)
 
@@ -277,7 +326,11 @@ export function ProjectTaskPanel({
             }
 
             return (
-              <div key={task.lineIndex} className="lw-item-row" style={{ alignItems: 'center' }}>
+              <div
+                key={task.lineIndex}
+                className={`lw-item-row ${isEditing ? 'editing' : ''}`}
+                style={{ alignItems: 'center' }}
+              >
                 <button
                   type="button"
                   className={`lw-check ${task.checked ? 'checked' : ''}`}
@@ -293,20 +346,47 @@ export function ProjectTaskPanel({
                   {task.checked && <IconCheck />}
                 </button>
 
-                <div className={`lw-item-title ${task.checked ? 'lw-item-done' : ''}`}>
-                  <InlineText
-                    text={displayText}
-                    baseRelPath={group.fileRelPath}
-                    onOpenFile={onOpenFile}
+                {isEditing ? (
+                  <textarea
+                    ref={editTextareaRef}
+                    className="lw-task-edit-box"
+                    rows={1}
+                    aria-label="编辑任务内容"
+                    value={editingDraft}
+                    onChange={(e) => setEditingDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        commitEditTask(task)
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault()
+                        e.stopPropagation()
+                        cancelEditTask()
+                      }
+                    }}
+                    onBlur={() => commitEditTask(task)}
                   />
-                  {task.fromDate && (
-                    <span className="lw-muted" style={{ marginLeft: 8 }}>
-                      {task.fromDate}
-                    </span>
-                  )}
-                </div>
+                ) : (
+                  <div
+                    className={`lw-item-title ${task.checked ? 'lw-item-done' : ''} ${readOnly ? '' : 'lw-item-title-editable'}`}
+                    title={readOnly ? undefined : '点击编辑任务'}
+                    onClick={() => startEditTask(rowKey, displayText)}
+                  >
+                    <InlineText
+                      text={displayText}
+                      baseRelPath={group.fileRelPath}
+                      onOpenFile={onOpenFile}
+                    />
+                    {task.fromDate && (
+                      <span className="lw-muted" style={{ marginLeft: 8 }}>
+                        {task.fromDate}
+                      </span>
+                    )}
+                  </div>
+                )}
 
-                <div className="lw-row" style={{ gap: 8, flexShrink: 0 }}>
+                <div className="lw-row" style={{ gap: 6, flexShrink: 0, flexWrap: 'nowrap' }}>
                   <div data-prio-menu style={{ display: 'inline-flex', alignItems: 'center' }}>
                     {prioOpen && !readOnly ? (
                       <div className="lw-prio-picker">
@@ -416,6 +496,30 @@ export function ProjectTaskPanel({
                       </div>
                     ) : null}
                   </div>
+
+                  {!readOnly && (
+                    <div
+                      className="lw-hover-actions"
+                      style={{ width: 22, justifyContent: 'center' }}
+                    >
+                      <button
+                        type="button"
+                        className="lw-icon-btn lw-task-del-btn"
+                        style={{ height: 22, minWidth: 22, padding: 0 }}
+                        title="删除任务"
+                        aria-label="删除任务"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => {
+                          cancelEditTask()
+                          setDurationOpenKey(null)
+                          setPrioOpenKey(null)
+                          onDeleteTask(group, task.lineIndex)
+                        }}
+                      >
+                        <IconX size={12} />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -446,7 +550,11 @@ export function ProjectTaskPanel({
                 placeholder="添加任务"
               />
               {(newTaskText.trim() || newPrioOpen) && (
-                <div className="lw-row" style={{ gap: 8, flexShrink: 0 }} data-new-prio-menu>
+                <div
+                  className="lw-row"
+                  style={{ gap: 6, flexShrink: 0, flexWrap: 'nowrap' }}
+                  data-new-prio-menu
+                >
                   {newPrioOpen ? (
                     <div className="lw-prio-picker">
                       {PRIORITY_OPTIONS.map((opt) => (
@@ -473,7 +581,7 @@ export function ProjectTaskPanel({
                       {priorityLabel(draftPrio)}
                     </button>
                   )}
-                  <span style={{ minWidth: 48 }} />
+                  <span style={{ minWidth: 76 }} />
                 </div>
               )}
             </form>

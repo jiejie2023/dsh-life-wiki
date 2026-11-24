@@ -127,6 +127,10 @@ export const api = {
     apiPost<{ updated: boolean }>('/tasks/minutes', { relPath, lineIndex, minutes }),
   setTaskPriority: (relPath: string, lineIndex: number, priority: TaskPriority) =>
     apiPost<{ updated: boolean }>('/tasks/priority', { relPath, lineIndex, priority }),
+  updateTaskText: (relPath: string, lineIndex: number, text: string) =>
+    apiPost<{ updated: boolean }>('/tasks/text', { relPath, lineIndex, text }),
+  deleteTask: (relPath: string, lineIndex: number) =>
+    apiPost<{ updated: boolean }>('/tasks/delete', { relPath, lineIndex }),
   updateTaskStatus: (relPath: string, status: TaskFileStatus) =>
     apiPost<{ updated: boolean }>('/tasks/status', { relPath, status }),
   appendTaskEntry: (relPath: string, section: 'log' | 'reflection', text: string) =>

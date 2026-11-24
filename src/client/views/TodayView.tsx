@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { applyOptimisticTaskTextEdit } from '../../shared/taskFormat.ts'
 import type {
   BoardSnapshot,
   ProjectTaskGroup,
@@ -208,6 +209,48 @@ export function TodayView({
                   ),
                 },
           ),
+        },
+      }),
+    })
+  }
+
+  const handleUpdateTaskText = (group: ProjectTaskGroup, lineIndex: number, text: string) => {
+    void onRunAction(() => api.updateTaskText(group.fileRelPath, lineIndex, text), {
+      optimistic: (prev) => ({
+        ...prev,
+        today: {
+          ...prev.today,
+          groups: prev.today.groups.map((g) => {
+            if (g.fileRelPath !== group.fileRelPath) return g
+            const nextTasks = g.tasks.map((t) =>
+              t.lineIndex === lineIndex ? applyOptimisticTaskTextEdit(t, text) : t,
+            )
+            return {
+              ...g,
+              tasks: nextTasks,
+              totalMinutes: nextTasks.reduce((s, t) => s + (t.minutes ?? 0), 0),
+            }
+          }),
+        },
+      }),
+    })
+  }
+
+  const handleDeleteTask = (group: ProjectTaskGroup, lineIndex: number) => {
+    void onRunAction(() => api.deleteTask(group.fileRelPath, lineIndex), {
+      optimistic: (prev) => ({
+        ...prev,
+        today: {
+          ...prev.today,
+          groups: prev.today.groups.map((g) => {
+            if (g.fileRelPath !== group.fileRelPath) return g
+            const nextTasks = g.tasks.filter((t) => t.lineIndex !== lineIndex)
+            return {
+              ...g,
+              tasks: nextTasks,
+              totalMinutes: nextTasks.reduce((s, t) => s + (t.minutes ?? 0), 0),
+            }
+          }),
         },
       }),
     })
@@ -432,6 +475,8 @@ export function TodayView({
               onToggleTask={handleToggleTask}
               onSetMinutes={handleSetMinutes}
               onSetPriority={handleSetPriority}
+              onUpdateTaskText={handleUpdateTaskText}
+              onDeleteTask={handleDeleteTask}
               onAddTask={handleAddTask}
               onSelectStatus={handleSelectStatus}
               onAppendNote={handleAppendNote}

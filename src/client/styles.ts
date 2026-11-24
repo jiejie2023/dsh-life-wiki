@@ -571,6 +571,42 @@ const CSS = `
   text-decoration: line-through;
 }
 
+.lw-item-title-editable {
+  cursor: text;
+}
+
+.lw-item-row.editing {
+  background: var(--lw-surface);
+  box-shadow: var(--lw-shadow-focus);
+}
+
+.lw-task-edit-box {
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--lw-text);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: none;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  display: block;
+}
+
+.lw-task-del-btn {
+  color: var(--lw-muted);
+}
+
+.lw-task-del-btn:hover:not(:disabled) {
+  background: var(--lw-danger-soft);
+  color: var(--lw-danger);
+}
+
 .lw-hover-actions {
   display: inline-flex;
   align-items: center;

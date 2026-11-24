@@ -67,17 +67,118 @@ describe('Life Wiki Host HTTP Seam (/api/life-wiki/*)', () => {
       assert.equal(initRes.ok, true)
       assert.equal(initRes.data.settings.dataDir, vaultDir)
 
-      // 5. Fetch snapshot
+      // 5. Fetch snapshot & test task edit/delete routes
       const snapRes = (await (
         await fetch(`${baseUrl}/api/life-wiki/snapshot?date=2026-11-24`)
       ).json()) as {
         ok: boolean
-        data: { projects: unknown[]; hasSampleData: boolean; knowledge: { wikiPages: unknown[] } }
+        data: {
+          projects: Array<{ name: string }>
+          hasSampleData: boolean
+          knowledge: { wikiPages: unknown[] }
+        }
       }
       assert.equal(snapRes.ok, true)
       assert.equal(snapRes.data.hasSampleData, true)
       assert.equal(snapRes.data.projects.length, 1)
       assert.equal(snapRes.data.knowledge.wikiPages.length, 1)
+
+      const sampleProject = snapRes.data.projects[0]!.name
+      const addTaskRes = (await (
+        await fetch(`${baseUrl}/api/life-wiki/tasks/add`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-life-wiki': '1' },
+          body: JSON.stringify({
+            projectName: sampleProject,
+            text: '临时测试任务',
+            date: '2026-11-24',
+            priority: 'high',
+          }),
+        })
+      ).json()) as { ok: boolean; data: { relPath: string } }
+      assert.equal(addTaskRes.ok, true)
+
+      const snapAfterAdd = (await (
+        await fetch(`${baseUrl}/api/life-wiki/snapshot?date=2026-11-24`)
+      ).json()) as {
+        ok: boolean
+        data: {
+          today: {
+            groups: Array<{
+              projectName: string
+              tasks: Array<{ lineIndex: number; text: string; priority: string }>
+            }>
+          }
+        }
+      }
+      const addedTask = snapAfterAdd.data.today.groups
+        .find((g) => g.projectName === sampleProject)!
+        .tasks.find((t) => t.text.includes('临时测试任务'))!
+      assert.ok(addedTask)
+
+      const editRes = (await (
+        await fetch(`${baseUrl}/api/life-wiki/tasks/text`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-life-wiki': '1' },
+          body: JSON.stringify({
+            relPath: addTaskRes.data.relPath,
+            lineIndex: addedTask.lineIndex,
+            text: '已修改测试任务',
+          }),
+        })
+      ).json()) as { ok: boolean; data: { updated: boolean } }
+      assert.equal(editRes.ok, true)
+
+      const snapAfterEdit = (await (
+        await fetch(`${baseUrl}/api/life-wiki/snapshot?date=2026-11-24`)
+      ).json()) as {
+        ok: boolean
+        data: {
+          today: {
+            groups: Array<{
+              projectName: string
+              tasks: Array<{ lineIndex: number; text: string; priority: string }>
+            }>
+          }
+        }
+      }
+      const editedTask = snapAfterEdit.data.today.groups
+        .find((g) => g.projectName === sampleProject)!
+        .tasks.find((t) => t.text.includes('已修改测试任务'))!
+      assert.ok(editedTask)
+      assert.equal(editedTask.priority, 'high')
+
+      const delRes = (await (
+        await fetch(`${baseUrl}/api/life-wiki/tasks/delete`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'x-life-wiki': '1' },
+          body: JSON.stringify({
+            relPath: addTaskRes.data.relPath,
+            lineIndex: editedTask.lineIndex,
+          }),
+        })
+      ).json()) as { ok: boolean; data: { updated: boolean } }
+      assert.equal(delRes.ok, true)
+
+      const snapAfterDel = (await (
+        await fetch(`${baseUrl}/api/life-wiki/snapshot?date=2026-11-24`)
+      ).json()) as {
+        ok: boolean
+        data: {
+          today: {
+            groups: Array<{
+              projectName: string
+              tasks: Array<{ text: string }>
+            }>
+          }
+        }
+      }
+      assert.equal(
+        snapAfterDel.data.today.groups
+          .find((g) => g.projectName === sampleProject)!
+          .tasks.some((t) => t.text.includes('已修改测试任务')),
+        false,
+      )
 
       // 6. Browse directories and serve binary image via /file/raw with dsh-app:// origin
       const browseRes = (await (

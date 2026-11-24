@@ -299,6 +299,18 @@ export function createHttpHandler(
             return { updated: true }
           }
 
+          case '/api/life-wiki/tasks/text':
+            await engine.updateTaskText(
+              String(body.relPath ?? ''),
+              Number(body.lineIndex),
+              String(body.text ?? ''),
+            )
+            return { updated: true }
+
+          case '/api/life-wiki/tasks/delete':
+            await engine.deleteTask(String(body.relPath ?? ''), Number(body.lineIndex))
+            return { updated: true }
+
           case '/api/life-wiki/tasks/add': {
             const p = String(body.priority ?? 'medium')
             const validP: TaskPriority = p === 'high' || p === 'low' ? p : 'medium'

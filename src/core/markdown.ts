@@ -1,4 +1,13 @@
 import { isAbsolute, normalize, relative, resolve } from 'node:path'
+import {
+  DURATION_SUFFIX_RE,
+  mergeEditedTaskBody,
+  parseFromDate,
+  parseTaskDuration,
+  parseTaskPriority,
+  priorityToLabel,
+  stripTaskPriority,
+} from '../shared/taskFormat.ts'
 import type {
   InboxItem,
   PlanItem,
@@ -8,6 +17,14 @@ import type {
   TaskItem,
   TaskPriority,
 } from '../shared/types.ts'
+
+export {
+  parseFromDate,
+  parseTaskDuration,
+  parseTaskPriority,
+  priorityToLabel,
+  stripTaskPriority,
+}
 
 export interface FrontmatterResult {
   hasFrontmatter: boolean
@@ -164,43 +181,18 @@ export function getSectionText(lines: string[], titlePrefix: string): string {
   return lines.slice(sec.startLine, sec.endLine).join('\n').trim()
 }
 
-export function parseTaskDuration(text: string): number | null {
-  const match = /[（(]\s*(\d+(?:\.\d+)?)\s*(分钟|分|min|小时|h)\s*[）)]/i.exec(text)
-  if (!match) return null
-  const num = Number(match[1])
-  if (!Number.isFinite(num)) return null
-  const unit = match[2]!.toLowerCase()
-  return unit === '小时' || unit === 'h' ? Math.round(num * 60) : Math.round(num)
-}
-
-export function parseFromDate(text: string): string | null {
-  const match = /[（(]\s*来自\s*(\d{2}-\d{2})\s*[）)]/.exec(text)
-  return match ? match[1]! : null
-}
-
-const PRIORITY_PREFIX_RE = /^\s*(?:\[\s*(高|中|低|P1|P2|P3)\s*\]|【\s*(高|中|低)\s*】)\s*/i
-
-export function priorityToLabel(priority: TaskPriority): '高' | '中' | '低' {
-  return priority === 'high' ? '高' : priority === 'low' ? '低' : '中'
-}
-
-export function parseTaskPriority(text: string): TaskPriority {
-  const match = PRIORITY_PREFIX_RE.exec(text)
-  const token = (match?.[1] ?? match?.[2] ?? '').toUpperCase()
-  if (token === '高' || token === 'P1') return 'high'
-  if (token === '低' || token === 'P3') return 'low'
-  return 'medium'
-}
-
-export function stripTaskPriority(text: string): string {
-  return text.replace(PRIORITY_PREFIX_RE, '').trimStart()
-}
-
 export function setCheckboxPriority(line: string, priority: TaskPriority): string {
   const match = /^(\s*-\s+\[[ xX]\]\s+)(.*)$/.exec(line)
   if (!match) throw new Error(`Line is not a markdown checkbox: ${line}`)
   const body = stripTaskPriority(match[2]!)
   return `${match[1]}[${priorityToLabel(priority)}] ${body}`
+}
+
+export function setCheckboxText(line: string, nextText: string): string {
+  const match = /^(\s*-\s+\[[ xX]\]\s+)(.*)$/.exec(line)
+  if (!match) throw new Error(`Line is not a markdown checkbox: ${line}`)
+  const body = mergeEditedTaskBody(match[2]!, nextText)
+  return `${match[1]}${body}`
 }
 
 export function parseTaskFile(content: string): {
@@ -367,9 +359,7 @@ export function toggleCheckboxLine(line: string, minutes?: number): string {
 export function setCheckboxMinutes(line: string, minutes: number | null): string {
   const match = /^(\s*-\s+\[[ xX]\]\s+)(.*)$/.exec(line)
   if (!match) throw new Error(`Line is not a markdown checkbox: ${line}`)
-  const cleaned = match[2]!
-    .replace(/\s*[（(]\s*\d+(?:\.\d+)?\s*(分钟|分|min|小时|h)\s*[）)]\s*$/i, '')
-    .trimEnd()
+  const cleaned = match[2]!.replace(DURATION_SUFFIX_RE, '').trimEnd()
   if (typeof minutes === 'number' && Number.isFinite(minutes) && minutes > 0) {
     return `${match[1]}${cleaned}（${Math.round(minutes)} min）`
   }

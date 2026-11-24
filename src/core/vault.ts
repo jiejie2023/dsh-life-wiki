@@ -51,6 +51,7 @@ import {
   resolveVaultPath,
   setCheckboxMinutes,
   setCheckboxPriority,
+  setCheckboxText,
   splitLines,
   stripTaskPriority,
   toggleCheckboxLine,
@@ -89,6 +90,8 @@ export interface LifeWikiEngine {
   toggleTask(relPath: string, lineIndex: number, minutes?: number): Promise<void>
   setTaskMinutes(relPath: string, lineIndex: number, minutes: number | null): Promise<void>
   setTaskPriority(relPath: string, lineIndex: number, priority: TaskPriority): Promise<void>
+  updateTaskText(relPath: string, lineIndex: number, text: string): Promise<void>
+  deleteTask(relPath: string, lineIndex: number): Promise<void>
   addTask(
     projectName: string,
     text: string,
@@ -1099,6 +1102,29 @@ export function createLifeWikiEngine(
         throw new Error(`Invalid task line index: ${lineIndex}`)
       }
       lines[lineIndex] = setCheckboxPriority(lines[lineIndex]!, priority)
+      await writeVaultFile(relPath, joinLines(lines, eol))
+    },
+
+    async updateTaskText(relPath, lineIndex, text) {
+      const { content } = await readVaultFile(relPath)
+      const { lines, eol } = splitLines(content)
+      if (lineIndex < 0 || lineIndex >= lines.length) {
+        throw new Error(`Invalid task line index: ${lineIndex}`)
+      }
+      lines[lineIndex] = setCheckboxText(lines[lineIndex]!, text)
+      await writeVaultFile(relPath, joinLines(lines, eol))
+    },
+
+    async deleteTask(relPath, lineIndex) {
+      const { content } = await readVaultFile(relPath)
+      const { lines, eol } = splitLines(content)
+      if (lineIndex < 0 || lineIndex >= lines.length) {
+        throw new Error(`Invalid task line index: ${lineIndex}`)
+      }
+      if (!/^\s*-\s+\[[ xX]\]\s+/.test(lines[lineIndex]!)) {
+        throw new Error('Target line is not a task checklist item')
+      }
+      lines.splice(lineIndex, 1)
       await writeVaultFile(relPath, joinLines(lines, eol))
     },
 

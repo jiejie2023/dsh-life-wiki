@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { applyOptimisticTaskTextEdit } from '../../shared/taskFormat.ts'
 import type {
   BoardSnapshot,
   IdeaSummary,
@@ -462,6 +463,49 @@ export function ProjectsView({
         ...g,
         tasks: g.tasks.map((t) => (t.lineIndex === lineIndex ? { ...t, priority } : t)),
       }),
+    )
+  }
+
+  const handleProjectUpdateTaskText = (
+    project: ProjectCard,
+    group: ProjectTaskGroup,
+    lineIndex: number,
+    text: string,
+  ) => {
+    runProjectTaskAction(
+      project,
+      selectedTaskDate,
+      () => api.updateTaskText(group.fileRelPath, lineIndex, text),
+      (g) => {
+        const nextTasks = g.tasks.map((t) =>
+          t.lineIndex === lineIndex ? applyOptimisticTaskTextEdit(t, text) : t,
+        )
+        return {
+          ...g,
+          tasks: nextTasks,
+          totalMinutes: nextTasks.reduce((s, t) => s + (t.minutes ?? 0), 0),
+        }
+      },
+    )
+  }
+
+  const handleProjectDeleteTask = (
+    project: ProjectCard,
+    group: ProjectTaskGroup,
+    lineIndex: number,
+  ) => {
+    runProjectTaskAction(
+      project,
+      selectedTaskDate,
+      () => api.deleteTask(group.fileRelPath, lineIndex),
+      (g) => {
+        const nextTasks = g.tasks.filter((t) => t.lineIndex !== lineIndex)
+        return {
+          ...g,
+          tasks: nextTasks,
+          totalMinutes: nextTasks.reduce((s, t) => s + (t.minutes ?? 0), 0),
+        }
+      },
     )
   }
 
@@ -1583,6 +1627,10 @@ export function ProjectsView({
                   onSetPriority={(g, idx, prio) =>
                     handleProjectSetPriority(activeDetail, g, idx, prio)
                   }
+                  onUpdateTaskText={(g, idx, text) =>
+                    handleProjectUpdateTaskText(activeDetail, g, idx, text)
+                  }
+                  onDeleteTask={(g, idx) => handleProjectDeleteTask(activeDetail, g, idx)}
                   onAddTask={(_, text, prio) =>
                     handleProjectAddTask(activeDetail, text, prio)
                   }

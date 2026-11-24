@@ -7,6 +7,8 @@ import { clearSampleData, initializeVault, inspectDirectory } from '../src/core/
 import { createLifeWikiEngine } from '../src/core/vault.ts'
 import { applyIdeaSections, parseIdeaSections } from '../src/client/ideaMarkdown.ts'
 import { applyReviewSections, parseReviewSections } from '../src/client/reviewMarkdown.ts'
+import { applyOptimisticTaskTextEdit, sortTasks } from '../src/shared/taskFormat.ts'
+import type { TaskItem } from '../src/shared/types.ts'
 
 async function withTempDir(fn: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(tmpdir(), 'life-wiki-test-'))
@@ -377,5 +379,105 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
     } finally {
       await rm(dir, { recursive: true, force: true })
     }
+  })
+
+  it('sorts unchecked tasks before checked tasks then by priority, and supports editing and deleting tasks losslessly', async () => {
+    const sampleItems: TaskItem[] = [
+      {
+        lineIndex: 5,
+        checked: true,
+        text: '[高] 已完成高优',
+        priority: 'high',
+        minutes: 30,
+        fromDate: null,
+        rawLine: '- [x] [高] 已完成高优（30 min）',
+      },
+      {
+        lineIndex: 6,
+        checked: true,
+        text: '[中] 已完成中优',
+        priority: 'medium',
+        minutes: null,
+        fromDate: null,
+        rawLine: '- [x] [中] 已完成中优',
+      },
+      {
+        lineIndex: 7,
+        checked: false,
+        text: '[低] 未完成低优',
+        priority: 'low',
+        minutes: null,
+        fromDate: null,
+        rawLine: '- [ ] [低] 未完成低优',
+      },
+      {
+        lineIndex: 8,
+        checked: false,
+        text: '[高] 未完成高优',
+        priority: 'high',
+        minutes: null,
+        fromDate: null,
+        rawLine: '- [ ] [高] 未完成高优',
+      },
+      {
+        lineIndex: 9,
+        checked: false,
+        text: '[中] 未完成中优',
+        priority: 'medium',
+        minutes: null,
+        fromDate: null,
+        rawLine: '- [ ] [中] 未完成中优',
+      },
+    ]
+
+    assert.deepEqual(
+      sortTasks(sampleItems).map((t) => t.lineIndex),
+      [8, 9, 7, 5, 6],
+    )
+
+    // Optimistic text edit preserves priority & trailing duration
+    const optEdited = applyOptimisticTaskTextEdit(sampleItems[0]!, '已完成高优-改名')
+    assert.equal(optEdited.priority, 'high')
+    assert.equal(optEdited.text, '[高] 已完成高优-改名')
+
+    await withTempDir(async (dir) => {
+      const now = new Date('2026-11-24T10:00:00+08:00')
+      await initializeVault(dir, { withSample: false, initGit: false, now })
+      const engine = createLifeWikiEngine(dir, { now: () => now })
+      await engine.createProject({ name: '效率优化', area: '工作' })
+
+      const relPath = await engine.addTask('效率优化', '旧任务标题', '2026-11-24', 'high')
+      await engine.addTask('效率优化', '待删除任务', '2026-11-24', 'low')
+
+      let snap = await engine.getSnapshot('2026-11-24')
+      let tasks = snap.today.groups.find((g) => g.projectName === '效率优化')!.tasks
+      assert.equal(tasks.length, 2)
+
+      // Add duration + toggle first task, then edit text -> priority & minutes & checkbox stay intact
+      await engine.toggleTask(relPath, tasks[0]!.lineIndex, 45)
+      await engine.updateTaskText(relPath, tasks[0]!.lineIndex, '新任务标题\n补充说明')
+
+      let raw = await readFile(join(dir, relPath), 'utf8')
+      assert.match(raw, /- \[x\] \[高\] 新任务标题 补充说明（45 min）/)
+
+      // Reject blank text
+      await assert.rejects(() => engine.updateTaskText(relPath, tasks[0]!.lineIndex, '   '))
+      await assert.rejects(() => engine.updateTaskText(relPath, tasks[0]!.lineIndex, '[高]   '))
+
+      // Delete second task
+      snap = await engine.getSnapshot('2026-11-24')
+      tasks = snap.today.groups.find((g) => g.projectName === '效率优化')!.tasks
+      assert.equal(tasks.length, 2)
+      assert.equal(tasks[0]?.minutes, 45)
+      assert.equal(tasks[0]?.priority, 'high')
+
+      await engine.deleteTask(relPath, tasks[1]!.lineIndex)
+      raw = await readFile(join(dir, relPath), 'utf8')
+      assert.doesNotMatch(raw, /待删除任务/)
+      assert.match(raw, /新任务标题 补充说明/)
+
+      snap = await engine.getSnapshot('2026-11-24')
+      assert.equal(snap.today.groups.find((g) => g.projectName === '效率优化')!.tasks.length, 1)
+    })
   })
 })
