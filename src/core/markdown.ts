@@ -217,8 +217,11 @@ export function parseTaskFile(content: string): {
     status = rawStatus as TaskFileStatus
   }
 
-  const taskSec = findSection(fm.lines, '任务')
-  if (!taskSec) {
+  const taskSec = findAnySection(fm.lines, ['任务', '待办'])
+  const logSec = findAnySection(fm.lines, ['日志', '记录'])
+  const refSec = findSection(fm.lines, '反思')
+
+  if (!taskSec && !logSec) {
     formatIssues.push('缺少 `## 任务` 栏目')
   }
 
@@ -247,15 +250,38 @@ export function parseTaskFile(content: string): {
     }
   }
 
-  const logSec = findSection(fm.lines, '日志')
-  const logs = logSec
+  const logs: string[] = logSec
     ? fm.lines
         .slice(logSec.startLine, logSec.endLine)
         .map((l) => l.trim())
         .filter((l) => l.length > 0)
     : []
 
-  const refSec = findSection(fm.lines, '反思')
+  // Fallback for freeform task/log files without standard/alias headings so UI never renders blank
+  if (!taskSec && !logSec) {
+    const fallbackEnd = refSec ? refSec.headingLine : fm.lines.length
+    for (let i = fm.bodyStartLine; i < fallbackEnd; i += 1) {
+      const rawLine = fm.lines[i] ?? ''
+      const trimmed = rawLine.trim()
+      if (!trimmed || /^#\s+/.test(trimmed)) continue
+      const match = /^-\s+\[([ xX])\]\s+(.*)$/.exec(trimmed)
+      if (match) {
+        const text = match[2]!.trim()
+        tasks.push({
+          lineIndex: i,
+          checked: match[1]!.toLowerCase() === 'x',
+          text,
+          priority: parseTaskPriority(text),
+          minutes: parseTaskDuration(text),
+          fromDate: parseFromDate(text),
+          rawLine,
+        })
+      } else {
+        logs.push(trimmed)
+      }
+    }
+  }
+
   const reflections = refSec
     ? fm.lines
         .slice(refSec.startLine, refSec.endLine)

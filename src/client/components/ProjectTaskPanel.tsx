@@ -589,20 +589,34 @@ export function ProjectTaskPanel({
         </div>
       ) : mode === 'log' ? (
         <div className="lw-list">
-          {group.logs.map((l, i) => (
-            <div key={`l-${i}`} className="lw-item-row">
-              <span className="lw-bullet-slot">
-                <span className="lw-bullet-dot" />
-              </span>
-              <div className="lw-item-title">
-                <InlineText
-                  text={cleanDisplayBullet(l)}
-                  baseRelPath={group.fileRelPath}
-                  onOpenFile={onOpenFile}
-                />
+          {group.logs.map((l, i) => {
+            const subhead = /^#{2,4}\s+(.+)$/.exec(l.trim())
+            if (subhead) {
+              return (
+                <div key={`l-${i}`} className="lw-review-subhead">
+                  <InlineText
+                    text={subhead[1]!.trim()}
+                    baseRelPath={group.fileRelPath}
+                    onOpenFile={onOpenFile}
+                  />
+                </div>
+              )
+            }
+            return (
+              <div key={`l-${i}`} className="lw-item-row">
+                <span className="lw-bullet-slot">
+                  <span className="lw-bullet-dot" />
+                </span>
+                <div className="lw-item-title">
+                  <InlineText
+                    text={cleanDisplayBullet(l)}
+                    baseRelPath={group.fileRelPath}
+                    onOpenFile={onOpenFile}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           {!readOnly && (
             <form
               className="lw-item-row"
@@ -630,20 +644,34 @@ export function ProjectTaskPanel({
         </div>
       ) : (
         <div className="lw-list">
-          {group.reflections.map((r, i) => (
-            <div key={`r-${i}`} className="lw-item-row">
-              <span className="lw-bullet-slot">
-                <span className="lw-bullet-dot reflection" />
-              </span>
-              <div className="lw-item-title">
-                <InlineText
-                  text={cleanDisplayBullet(r)}
-                  baseRelPath={group.fileRelPath}
-                  onOpenFile={onOpenFile}
-                />
+          {group.reflections.map((r, i) => {
+            const subhead = /^#{2,4}\s+(.+)$/.exec(r.trim())
+            if (subhead) {
+              return (
+                <div key={`r-${i}`} className="lw-review-subhead">
+                  <InlineText
+                    text={subhead[1]!.trim()}
+                    baseRelPath={group.fileRelPath}
+                    onOpenFile={onOpenFile}
+                  />
+                </div>
+              )
+            }
+            return (
+              <div key={`r-${i}`} className="lw-item-row">
+                <span className="lw-bullet-slot">
+                  <span className="lw-bullet-dot reflection" />
+                </span>
+                <div className="lw-item-title">
+                  <InlineText
+                    text={cleanDisplayBullet(r)}
+                    baseRelPath={group.fileRelPath}
+                    onOpenFile={onOpenFile}
+                  />
+                </div>
               </div>
-            </div>
-          ))}
+            )
+          })}
           {!readOnly && (
             <form
               className="lw-item-row"

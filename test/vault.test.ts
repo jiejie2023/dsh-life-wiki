@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import { clearSampleData, initializeVault, inspectDirectory } from '../src/core/scaffold.ts'
+import { parseTaskFile } from '../src/core/markdown.ts'
 import { createLifeWikiEngine } from '../src/core/vault.ts'
 import { applyIdeaSections, parseIdeaSections } from '../src/client/ideaMarkdown.ts'
 import { applyReviewSections, parseReviewSections } from '../src/client/reviewMarkdown.ts'
@@ -479,5 +480,48 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
       snap = await engine.getSnapshot('2026-11-24')
       assert.equal(snap.today.groups.find((g) => g.projectName === '效率优化')!.tasks.length, 1)
     })
+  })
+
+  it('parses legacy task/log aliases (待办/记录) and freeform fallback task files gracefully', () => {
+    const aliasDoc = [
+      '---',
+      'status: doing',
+      '---',
+      '',
+      '## 待办',
+      '',
+      '- [x] 跑通对标流程',
+      '- [ ] 明天继续拆爆款',
+      '',
+      '## 记录',
+      '',
+      '- 11:30 完成了第一批整理',
+      '',
+    ].join('\n')
+
+    const parsedAlias = parseTaskFile(aliasDoc)
+    assert.equal(parsedAlias.valid, true)
+    assert.equal(parsedAlias.tasks.length, 2)
+    assert.equal(parsedAlias.tasks[0]?.checked, true)
+    assert.equal(parsedAlias.logs.length, 1)
+    assert.match(parsedAlias.logs[0]!, /完成了第一批整理/)
+
+    const freeformDoc = [
+      '# 2026-11-24 任务记录',
+      '',
+      '## 1. 定时任务执行',
+      '',
+      '- [x] 自动精选 10 条',
+      '- 已私信通知确认',
+      '',
+    ].join('\n')
+
+    const parsedFreeform = parseTaskFile(freeformDoc)
+    assert.equal(parsedFreeform.valid, false)
+    assert.ok(parsedFreeform.formatIssues.length >= 2)
+    assert.equal(parsedFreeform.tasks.length, 1)
+    assert.equal(parsedFreeform.tasks[0]?.text, '自动精选 10 条')
+    assert.equal(parsedFreeform.logs.length, 2)
+    assert.equal(parsedFreeform.logs[0], '## 1. 定时任务执行')
   })
 })
