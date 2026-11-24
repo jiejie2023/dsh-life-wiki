@@ -596,6 +596,7 @@ export function createLifeWikiEngine(
     draftReviews: ReviewSummary[],
     availableWeeksSet: Set<string>,
     weekMetrics: WeekProjectMetrics[],
+    activityByKey: Map<string, { activityDate: string; mtimeMs: number }>,
   ): Promise<ProjectCard | null> {
     const homepageRelPath = `${baseRel}/${projectName}.md`
     const homepageContent = await readUtf8IfExists(join(rootDir, homepageRelPath))
@@ -724,6 +725,23 @@ export function createLifeWikiEngine(
     const staleDays = latestTaskDate ? diffDays(latestTaskDate, dateStr) : null
     const latestReview = reviewFiles[0] ?? null
 
+    const latestReviewDate = latestReview ? isoWeekDateRange(latestReview.week).start : ''
+    const createdDate = /^\d{4}-\d{2}-\d{2}$/.test(created) ? created : ''
+    const activityDate =
+      [latestTaskDate ?? '', latestReviewDate, createdDate]
+        .filter((d) => d.length > 0)
+        .sort()
+        .at(-1) ?? ''
+
+    const statTargets = [
+      join(rootDir, homepageRelPath),
+      taskFiles[0] ? join(rootDir, taskFiles[0].relPath) : null,
+      latestReview ? join(rootDir, latestReview.relPath) : null,
+    ].filter((p): p is string => p !== null)
+    const stats = await Promise.all(statTargets.map((p) => stat(p).catch(() => null)))
+    const mtimeMs = stats.reduce((max, st) => Math.max(max, st?.mtimeMs ?? 0), 0)
+    activityByKey.set(`${archived ? 'archived:' : ''}${projectName}`, { activityDate, mtimeMs })
+
     return {
       name: projectName,
       archived,
@@ -782,6 +800,7 @@ export function createLifeWikiEngine(
     const draftReviews: ReviewSummary[] = []
     const weekMetrics: WeekProjectMetrics[] = []
     const availableWeeksSet = new Set<string>([weekStr])
+    const activityByKey = new Map<string, { activityDate: string; mtimeMs: number }>()
 
     const projectsDir = join(rootDir, 'projects')
     if (await exists(projectsDir)) {
@@ -800,6 +819,7 @@ export function createLifeWikiEngine(
           draftReviews,
           availableWeeksSet,
           weekMetrics,
+          activityByKey,
         )
         if (card) projects.push(card)
       }
@@ -822,53 +842,101 @@ export function createLifeWikiEngine(
           draftReviews,
           availableWeeksSet,
           weekMetrics,
+          activityByKey,
         )
         if (card) archivedProjects.push(card)
       }
     }
 
+    const compareByActivity = (
+      keyA: string,
+      nameA: string,
+      keyB: string,
+      nameB: string,
+    ): number => {
+      const aMeta = activityByKey.get(keyA) ?? { activityDate: '', mtimeMs: 0 }
+      const bMeta = activityByKey.get(keyB) ?? { activityDate: '', mtimeMs: 0 }
+      return (
+        bMeta.activityDate.localeCompare(aMeta.activityDate) ||
+        bMeta.mtimeMs - aMeta.mtimeMs ||
+        nameA.localeCompare(nameB, 'zh-CN')
+      )
+    }
+
     projects.sort(
       (a, b) =>
         STATUS_SORT_ORDER[a.status] - STATUS_SORT_ORDER[b.status] ||
-        a.name.localeCompare(b.name, 'zh-CN'),
+        compareByActivity(a.name, a.name, b.name, b.name),
     )
-    archivedProjects.sort((a, b) => a.name.localeCompare(b.name, 'zh-CN'))
+    archivedProjects.sort((a, b) =>
+      compareByActivity(`archived:${a.name}`, a.name, `archived:${b.name}`, b.name),
+    )
+
+    const projectRank = new Map<string, number>(projects.map((p, idx) => [p.name, idx]))
+    const rankOf = (name: string): number => projectRank.get(name) ?? Number.MAX_SAFE_INTEGER
+
     todayGroups.sort((a, b) => {
       if (a.exists !== b.exists) return a.exists ? -1 : 1
       return (
+        rankOf(a.projectName) - rankOf(b.projectName) ||
         STATUS_SORT_ORDER[a.projectStatus] - STATUS_SORT_ORDER[b.projectStatus] ||
         a.projectName.localeCompare(b.projectName, 'zh-CN')
       )
     })
+    weekMetrics.sort(
+      (a, b) =>
+        rankOf(a.projectName) - rankOf(b.projectName) ||
+        a.projectName.localeCompare(b.projectName, 'zh-CN'),
+    )
+    draftReviews.sort(
+      (a, b) =>
+        b.week.localeCompare(a.week) ||
+        rankOf(a.projectName) - rankOf(b.projectName) ||
+        a.projectName.localeCompare(b.projectName, 'zh-CN'),
+    )
     formatWarnings.sort((a, b) => b.date.localeCompare(a.date))
 
     // Inbox
     const inboxContent = (await readUtf8IfExists(join(rootDir, 'inbox.md'))) ?? ''
     const inbox = parseInbox(inboxContent)
 
-    // Ideas (00_ideas)
+    // Ideas (00_ideas) — most recently created/updated first
     const ideasDir = join(rootDir, 'projects', '00_ideas')
-    const ideas: IdeaSummary[] = []
+    const ideasWithActivity: Array<{ item: IdeaSummary; created: string; mtimeMs: number }> = []
     if (await exists(ideasDir)) {
-      const ideaFiles = (await readdir(ideasDir))
-        .filter((f) => f.endsWith('.md'))
-        .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+      const ideaFiles = (await readdir(ideasDir)).filter((f) => f.endsWith('.md'))
       for (const file of ideaFiles) {
         const relPath = `projects/00_ideas/${file}`
-        const raw = (await readUtf8IfExists(join(rootDir, relPath))) ?? ''
-        const fm = parseFrontmatter(raw)
+        const absPath = join(rootDir, relPath)
+        const [raw, st] = await Promise.all([
+          readUtf8IfExists(absPath),
+          stat(absPath).catch(() => null),
+        ])
+        const fm = parseFrontmatter(raw ?? '')
         const motivation = getSectionText(fm.lines, '动机')
         const changeMatch = /\*\*做完能带来什么真实变化[：:]\*\*\s*(.+)/.exec(motivation)
-        ideas.push({
-          name: file.replace(/\.md$/i, ''),
-          relPath,
-          status: parseProjectStatus(fm.fields.status ?? 'idea'),
-          idea: getSectionText(fm.lines, '想法'),
-          judgment: getSectionText(fm.lines, '判断'),
-          motivationChange: changeMatch ? changeMatch[1]!.trim() : '',
+        const createdRaw = fm.fields.created ?? fm.fields.start ?? ''
+        ideasWithActivity.push({
+          created: /^\d{4}-\d{2}-\d{2}$/.test(createdRaw) ? createdRaw : '',
+          mtimeMs: st?.mtimeMs ?? 0,
+          item: {
+            name: file.replace(/\.md$/i, ''),
+            relPath,
+            status: parseProjectStatus(fm.fields.status ?? 'idea'),
+            idea: getSectionText(fm.lines, '想法'),
+            judgment: getSectionText(fm.lines, '判断'),
+            motivationChange: changeMatch ? changeMatch[1]!.trim() : '',
+          },
         })
       }
     }
+    ideasWithActivity.sort(
+      (a, b) =>
+        b.created.localeCompare(a.created) ||
+        b.mtimeMs - a.mtimeMs ||
+        a.item.name.localeCompare(b.item.name, 'zh-CN'),
+    )
+    const ideas = ideasWithActivity.map((x) => x.item)
 
     const weekDiaries = diaries.filter(
       (d) => d.date >= weekRange.start && d.date <= weekRange.end,

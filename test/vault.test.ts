@@ -329,4 +329,53 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
     assert.doesNotMatch(legacyMigrated, /^## 没做的$/m)
     assert.match(legacyMigrated, /## 飞书同步\n\n已同步 12 条/)
   })
+
+  it('sorts projects, today groups, and review metrics consistently by most recent activity', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'life-wiki-sort-'))
+    try {
+      await initializeVault(dir, {
+        withSample: false,
+        initGit: false,
+        now: new Date('2026-11-24T09:00:00'),
+      })
+      const engine = createLifeWikiEngine(dir, { now: () => new Date('2026-11-24T09:00:00') })
+
+      await engine.createProject({ name: '海晞项目', area: '工作', created: '2026-10-01' })
+      await engine.createProject({ name: 'AlphaPlugin', area: '工作', created: '2026-11-01' })
+      await engine.createProject({ name: '长期记录', area: '生活', created: '2026-10-05' })
+
+      // Make all three 'doing'
+      await engine.updateProjectMeta('海晞项目', { status: 'doing' })
+      await engine.updateProjectMeta('AlphaPlugin', { status: 'doing' })
+      await engine.updateProjectMeta('长期记录', { status: 'doing' })
+
+      // Give distinct latest activity dates: AlphaPlugin (11-24) > 海晞项目 (11-22) > 长期记录 (11-10)
+      // First clear the auto-created 2026-11-24 task & W48 review stubs on older ones
+      const { rm } = await import('node:fs/promises')
+      await rm(join(dir, 'projects/海晞项目/01_tasks/2026-11-24.md'), { force: true })
+      await rm(join(dir, 'projects/海晞项目/03_reviews/2026-W48.md'), { force: true })
+      await rm(join(dir, 'projects/长期记录/01_tasks/2026-11-24.md'), { force: true })
+      await rm(join(dir, 'projects/长期记录/03_reviews/2026-W48.md'), { force: true })
+
+      await engine.addTask('AlphaPlugin', '今天推进插件', '2026-11-24', 'high')
+      await engine.addTask('海晞项目', '前天做的任务', '2026-11-22', 'medium')
+      await engine.addTask('长期记录', '两周前的记录', '2026-11-10', 'low')
+
+      const snap = await engine.getSnapshot('2026-11-24', '2026-W48')
+      assert.deepEqual(
+        snap.projects.map((p) => p.name),
+        ['AlphaPlugin', '海晞项目', '长期记录'],
+      )
+      assert.deepEqual(
+        snap.reviewCenter.projectMetrics.map((m) => m.projectName),
+        ['AlphaPlugin', '海晞项目', '长期记录'],
+      )
+      assert.deepEqual(
+        snap.today.groups.map((g) => g.projectName),
+        ['AlphaPlugin', '海晞项目', '长期记录'],
+      )
+    } finally {
+      await rm(dir, { recursive: true, force: true })
+    }
+  })
 })
