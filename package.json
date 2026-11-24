@@ -56,6 +56,7 @@
     "build": "node scripts/build.mjs",
     "test": "node --test test/vault.test.ts test/http.test.ts",
     "test:all": "npm run typecheck && npm run build && npm test && node --test test/build.test.mjs",
+    "sync:template": "node scripts/sync-template.mjs",
     "preview": "node scripts/preview.mjs"
   },
   "devDependencies": {

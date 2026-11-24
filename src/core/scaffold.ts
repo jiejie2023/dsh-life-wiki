@@ -83,6 +83,17 @@ export async function inspectDirectory(dirInput: string): Promise<DirectoryInspe
   }
 }
 
+function buildAgentsMd(): string {
+  return `# 知识库入口规则
+
+进入本目录后，先读 [设计说明](system/design.md) 和 [规则](system/schema.md)。
+
+根目录四个文件夹：\`projects/\` 放项目（\`00_ideas/\` 放待立项的想法，\`99_archives/\` 放归档），\`raw/\` 放原件，\`wiki/\` 放从原件编译的知识页，\`system/\` 放设计说明、规则和标准模板；根目录另放 \`inbox.md\` 作收件箱。
+
+本知识库以 \`raw/\` 中的原始资料为事实依据。新建或整理文件时遵守 \`system/schema.md\` 与 \`system/templates/\` 的约定；不要修改已有原件，不要把未核对的推测写成已确认知识；要改 \`system/schema.md\` 先征得用户同意。
+`
+}
+
 function buildDesignMd(): string {
   return `# 设计说明
 
@@ -102,21 +113,27 @@ function buildSchemaMd(): string {
 ## 目录职责
 
 - \`inbox.md\`：暂存随手记下的灵感与待分流事项。
-- \`projects/\`：项目目录；主页记录一件事从想法到总结的全过程，同级放四个留档子目录：
-  - \`01_tasks/YYYY-MM-DD.md\`：当天任务（\`- [ ] [高/中/低] 事情（N min）\`）、日志（重要决定以“决定：”开头）、反思。
+- \`projects/\`：项目目录；主页 \`<项目名>.md\` 的 YAML 属性写 \`status\`（\`idea / cancel / todo / doing / pause / done\`）、\`area\`、\`created\`（\`YYYY-MM-DD\`）、\`deadline\`（可选），正文记录想法、动机、认知、判断、目标、计划、总结；同级放四个留档子目录：
+  - \`01_tasks/YYYY-MM-DD.md\`：当天任务（\`- [ ] [高/中/低] 事情（N min）\`）、日志（重要决定以“决定：”开头）、反思；\`status\` 取 \`todo / doing / done\`。
   - \`02_resources/resources.md\`：本项目用到的规范、依据与参考资料登记。
-  - \`03_reviews/YYYY-Www.md\`：周复盘（本周进展 / 问题与反思 / 下周重点），审核后 \`status\` 从 \`draft\`（待审核）改为 \`final\`（已审核）。
+  - \`03_reviews/YYYY-Www.md\`：周复盘（\`## 本周进展\` / \`## 问题与反思\` / \`## 下周重点\`），审核后 \`status\` 从 \`draft\`（待审核）改为 \`final\`（已审核）。
   - \`04_outputs/outputs.md\`：对外交付成品登记。
 - \`projects/00_ideas/\`：还没决定做不做的想法，一个想法一个 \`.md\`。
 - \`projects/99_archives/\`：已完成（\`done\`）、决定不做（\`cancel\`）或长期暂停的项目归档。
 - \`raw/\`：不可变原件层。个人日记放在 \`raw/me/diary/\`（单文件 \`YYYY-MM-DD.md\` 或图文文件夹 \`YYYY-MM-DD/日记.md\`，原话照录、按时间往后追加）；外部 GitHub 仓库按 L1 轻收藏 / L2 防闭源冷备（\`repository.zip\` 留本地不进 Git） / L3 实战二开分级收藏。
 - \`wiki/\`：从原件和实践经验整理出的长期复用知识页，配套维护 \`wiki/index.md\` 与 \`wiki/log.md\`。
-- \`system/\`：设计说明、规则与标准模板。
+- \`system/\`：设计说明、规则与标准模板（\`system/templates/\`）。
 
 ## 领域清单
 
 领域清单：
 ${DEFAULT_AREAS.map((a) => `- ${a}`).join('\n')}
+
+## 写入原则
+
+- 保持普通 Markdown 可读，不依赖专用软件才能理解内容。
+- 不修改 \`raw/\` 中已有原件；日记只保留用户原话。
+- 用户的决定（想法、动机、判断、目标、计划、下周重点、状态变更）只按用户的话写，AI 的建议不直接写成用户的决定。
 `
 }
 
@@ -257,6 +274,7 @@ export async function initializeVault(
       '',
     ].join('\n'),
   )
+  await writeIfMissing(join(rootDir, 'AGENTS.md'), buildAgentsMd())
   await writeIfMissing(join(rootDir, 'system/design.md'), buildDesignMd())
   await writeIfMissing(join(rootDir, 'system/schema.md'), buildSchemaMd())
   for (const [rel, body] of Object.entries(buildTemplates())) {

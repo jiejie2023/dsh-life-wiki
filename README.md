@@ -23,10 +23,13 @@
 - **知识库（Knowledge）**：浏览、搜索与新建 `wiki/` 知识页（自动维护 `index.md` 与 `log.md`），查看 `raw/` 原件与代码仓库分级收藏（`L1 / L2 / L3`）。
 - **全局收件箱（Inbox）**：任意页面随时记入 `inbox.md`，一键转为「想法」或分配为指定项目的今日任务。
 
-## 本地目录结构
+## 本地目录结构与参考模板
+
+仓库内置了完整的标准知识库参考模板：[`vault-template/`](./vault-template/)（可直接浏览全部目录、规则与模板文件，也可在插件首次引导页一键生成同款目录）。
 
 ```text
 <你的知识库目录>/
+├── AGENTS.md                     # AI Agent 入口规则（引导读取 design.md 与 schema.md）
 ├── inbox.md                      # 收件箱
 ├── projects/
 │   ├── 00_ideas/                 # 待评估的想法
