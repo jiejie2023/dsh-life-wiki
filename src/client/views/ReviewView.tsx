@@ -1,5 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react'
-import type { BoardSnapshot, ReviewStatus, ReviewSummary } from '../../shared/types.ts'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import type {
+  BoardSnapshot,
+  DiaryEntrySummary,
+  ReviewStatus,
+  WeekProjectMetrics,
+} from '../../shared/types.ts'
 import type { RunActionFn } from '../App.tsx'
 import { api } from '../api.ts'
 import {
@@ -10,11 +15,19 @@ import {
   IconFile,
   IconPlus,
   IconProjectPie,
-  IconX,
 } from '../components/Icons.tsx'
-import { InlineText } from '../components/MarkdownView.tsx'
-import { EditableReviewLine } from '../components/ProjectReviewPanel.tsx'
-import { parseReviewWeekLine, type ReviewWeekItem } from '../reviewMarkdown.ts'
+import {
+  ReviewModeTabs,
+  ReviewSectionBody,
+  type ReviewSectionTab,
+} from '../components/ProjectReviewPanel.tsx'
+import {
+  applyReviewSections,
+  parseReviewSections,
+  parseReviewWeekLine,
+  type ReviewDraft,
+  type ReviewWeekItem,
+} from '../reviewMarkdown.ts'
 
 interface ReviewViewProps {
   snapshot: BoardSnapshot
@@ -35,6 +48,13 @@ function isoWeekToUtcMonday(weekStr: string): Date | null {
   const jan4Day = jan4.getUTCDay() || 7
   const week1Monday = new Date(jan4.getTime() - (jan4Day - 1) * 86400_000)
   return new Date(week1Monday.getTime() + (week - 1) * 7 * 86400_000)
+}
+
+function isoWeekRangeShort(weekStr: string): string {
+  const monday = isoWeekToUtcMonday(weekStr)
+  if (!monday) return ''
+  const sunday = new Date(monday.getTime() + 6 * 86400_000)
+  return `${monday.toISOString().slice(5, 10)} ~ ${sunday.toISOString().slice(5, 10)}`
 }
 
 function utcDateToIsoWeek(d: Date): string {
@@ -59,6 +79,236 @@ function formatDiaryDay(iso: string): string {
   return `${Number(m[2])}月${Number(m[3])}日 · ${WEEKDAYS[dt.getDay()] ?? ''}`
 }
 
+function cleanDiarySnippet(entry: DiaryEntrySummary): string {
+  let body = (entry.content || '').replace(/\r\n/g, '\n')
+  const fmMatch = body.match(/^---\n[\s\S]*?\n---\n?([\s\S]*)$/)
+  if (fmMatch) body = fmMatch[1] ?? ''
+  const lines = body
+    .split('\n')
+    .map((line) =>
+      line
+        .trim()
+        .replace(/^>\s*\[![a-zA-Z0-9_-]+\][+-]?\s*/, '')
+        .replace(/^>\s?/, '')
+        .replace(/<\/?font\b[^>]*>/gi, '')
+        .replace(/^!\[[^\]]*\]\([^)]+\)$/, ''),
+    )
+    .filter((line) => {
+      if (!line) return false
+      if (/^#{1,4}\s+/.test(line)) return false
+      if (/^---+$/.test(line)) return false
+      return true
+    })
+  const text = lines.join(' ').replace(/[*`#_]/g, '').replace(/\s+/g, ' ').trim()
+  return text || entry.preview || '（点击查看原文）'
+}
+
+interface WeekReviewCardProps {
+  metric: WeekProjectMetrics
+  onOpenFile: (relPath: string, opts?: { edit?: boolean }) => void
+  onRunAction: RunActionFn
+}
+
+function WeekReviewCard({ metric, onOpenFile, onRunAction }: WeekReviewCardProps) {
+  const rev = metric.review!
+  const relPath = rev.relPath
+
+  const [mode, setMode] = useState<ReviewSectionTab>('thisWeek')
+  const [rawContent, setRawContent] = useState<string | null>(null)
+  const [draft, setDraft] = useState<ReviewDraft | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [statusMenuOpen, setStatusMenuOpen] = useState(false)
+
+  const dirtyRef = useRef(false)
+  const latestRawRef = useRef<string | null>(null)
+  const latestDraftRef = useRef<ReviewDraft | null>(null)
+
+  const summaryKey = `${rev.relPath}|${rev.status ?? ''}|${rev.summaryLines.join('\n')}|${rev.nextWeekItems.join('\n')}`
+
+  useEffect(() => {
+    let alive = true
+    setLoading(true)
+    setStatusMenuOpen(false)
+    dirtyRef.current = false
+
+    api
+      .readFile(relPath)
+      .then((res) => {
+        if (!alive) return
+        const parsed = parseReviewSections(res.content)
+        setRawContent(res.content)
+        setDraft(parsed)
+        latestRawRef.current = res.content
+        latestDraftRef.current = parsed
+      })
+      .catch(() => {
+        if (!alive) return
+        const fallbackItems = rev.summaryLines
+          .map((l) => parseReviewWeekLine(l))
+          .filter((x): x is ReviewWeekItem => x !== null)
+        const fallback: ReviewDraft = {
+          status: rev.status === 'final' ? 'final' : 'draft',
+          thisWeekItems: fallbackItems,
+          totalHoursLine: rev.totalHoursText,
+          reasons: [],
+          lessons: [],
+          nextWeekItems: rev.nextWeekItems,
+        }
+        setDraft(fallback)
+        latestDraftRef.current = fallback
+      })
+      .finally(() => {
+        if (alive) setLoading(false)
+      })
+    return () => {
+      alive = false
+    }
+  }, [summaryKey, relPath])
+
+  useEffect(() => {
+    setMode('thisWeek')
+  }, [relPath])
+
+  useEffect(() => {
+    if (!statusMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as HTMLElement | null
+      if (!t?.closest(`[data-rv-card-status="${relPath}"]`)) setStatusMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setStatusMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [statusMenuOpen, relPath])
+
+  const persistNow = async (nextDraft: ReviewDraft) => {
+    const base = latestRawRef.current
+    if (base === null) return
+    const nextMd = applyReviewSections(base, nextDraft)
+    dirtyRef.current = false
+    if (nextMd === base) return
+    latestRawRef.current = nextMd
+    setRawContent(nextMd)
+    await onRunAction(async () => {
+      await api.writeFile(relPath, nextMd)
+    })
+  }
+
+  const commitDraft = (next: ReviewDraft, immediate = false) => {
+    setDraft(next)
+    latestDraftRef.current = next
+    dirtyRef.current = true
+    if (immediate) {
+      void persistNow(next)
+    }
+  }
+
+  const flushSave = () => {
+    if (!dirtyRef.current || !latestDraftRef.current) return
+    void persistNow(latestDraftRef.current)
+  }
+
+  const curStatus: ReviewStatus = draft?.status ?? (rev.status === 'final' ? 'final' : 'draft')
+  const hours = metric.totalMinutes > 0 ? `${(metric.totalMinutes / 60).toFixed(1)} 小时` : null
+  const ratio = useMemo(() => {
+    const items = (draft?.thisWeekItems ?? []).filter((it) => it.done !== null)
+    if (items.length > 0) {
+      return items.filter((it) => it.done === true).length / items.length
+    }
+    return metric.totalTasks > 0 ? metric.doneTasks / metric.totalTasks : 0
+  }, [draft?.thisWeekItems, metric.doneTasks, metric.totalTasks])
+
+  return (
+    <section className="lw-stack" style={{ gap: 6 }}>
+      {/* Mirrors TodayView ProjectTaskPanel Header: Title | [本周] 原因 经验 下周  • 待审核 ▾  📄 */}
+      <div className="lw-section-head">
+        <div className="lw-row" style={{ gap: 9, minWidth: 0 }}>
+          <IconProjectPie ratio={ratio} size={16} />
+          <h2 className="lw-section-title">{metric.projectName}</h2>
+          {hours && <span className="lw-muted">{hours}</span>}
+        </div>
+
+        <div className="lw-row" style={{ gap: 2, flexShrink: 0 }}>
+          <ReviewModeTabs mode={mode} onChange={setMode} />
+
+          <div className="lw-menu-wrap" data-rv-card-status={relPath}>
+            <button
+              type="button"
+              className={`lw-status-trigger ${statusMenuOpen ? 'open' : ''}`}
+              onClick={() => setStatusMenuOpen((v) => !v)}
+            >
+              <span className={`lw-status-dot ${curStatus === 'final' ? 'done' : 'todo'}`} />
+              <span>{curStatus === 'final' ? '已审核' : '待审核'}</span>
+              <IconChevronDown size={12} />
+            </button>
+
+            {statusMenuOpen && (
+              <div className="lw-menu" role="menu">
+                {(
+                  [
+                    ['draft', '待审核', 'todo'],
+                    ['final', '已审核', 'done'],
+                  ] as const
+                ).map(([val, label, dotCls]) => (
+                  <button
+                    key={val}
+                    type="button"
+                    role="menuitem"
+                    className={`lw-menu-item ${curStatus === val ? 'active' : ''}`}
+                    onClick={() => {
+                      setStatusMenuOpen(false)
+                      if (curStatus === val) return
+                      if (draft && rawContent !== null) {
+                        commitDraft({ ...draft, status: val }, true)
+                      } else {
+                        void onRunAction(() => api.updateReview(relPath, { status: val }))
+                      }
+                    }}
+                  >
+                    <span className={`lw-status-dot ${dotCls}`} />
+                    <span style={{ flex: 1 }}>{label}</span>
+                    {curStatus === val && <IconCheck size={12} />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <button
+            type="button"
+            className="lw-icon-btn"
+            style={{ height: 26, minWidth: 26 }}
+            title="编辑复盘原文"
+            onClick={() => onOpenFile(relPath, { edit: true })}
+          >
+            <IconFile size={14} />
+          </button>
+        </div>
+      </div>
+
+      {loading && !draft ? (
+        <div className="lw-muted" style={{ padding: '4px 0' }}>
+          读取中…
+        </div>
+      ) : draft ? (
+        <ReviewSectionBody
+          mode={mode}
+          draft={draft}
+          relPath={relPath}
+          onOpenFile={onOpenFile}
+          onCommitDraft={commitDraft}
+          onFlushSave={flushSave}
+        />
+      ) : null}
+    </section>
+  )
+}
+
 export function ReviewView({
   snapshot,
   selectedWeek,
@@ -68,21 +318,25 @@ export function ReviewView({
 }: ReviewViewProps) {
   const { reviewCenter } = snapshot
   const [weekMenuOpen, setWeekMenuOpen] = useState(false)
-  const [statusMenuRelPath, setStatusMenuRelPath] = useState<string | null>(null)
-  const [nextWeekDrafts, setNextWeekDrafts] = useState<Record<string, string[]>>({})
-  const [newNextInputs, setNewNextInputs] = useState<Record<string, string>>({})
+  const [generateMenuOpen, setGenerateMenuOpen] = useState(false)
+
+  const isSwitchingWeek = reviewCenter.week !== selectedWeek
 
   useEffect(() => {
-    if (!weekMenuOpen && !statusMenuRelPath) return
+    setGenerateMenuOpen(false)
+  }, [selectedWeek])
+
+  useEffect(() => {
+    if (!weekMenuOpen && !generateMenuOpen) return
     const onDown = (e: MouseEvent) => {
       const t = e.target as HTMLElement | null
       if (weekMenuOpen && !t?.closest('[data-rv-week-menu]')) setWeekMenuOpen(false)
-      if (statusMenuRelPath && !t?.closest('[data-rv-status-menu]')) setStatusMenuRelPath(null)
+      if (generateMenuOpen && !t?.closest('[data-rv-gen-menu]')) setGenerateMenuOpen(false)
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setWeekMenuOpen(false)
-        setStatusMenuRelPath(null)
+        setGenerateMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', onDown)
@@ -91,9 +345,14 @@ export function ReviewView({
       document.removeEventListener('mousedown', onDown)
       window.removeEventListener('keydown', onKey)
     }
-  }, [weekMenuOpen, statusMenuRelPath])
+  }, [weekMenuOpen, generateMenuOpen])
 
-  // Year-grouped available weeks for scalable long-term navigation
+  const draftWeekSet = useMemo(() => {
+    const s = new Set<string>()
+    for (const r of reviewCenter.draftReviews) s.add(r.week)
+    return s
+  }, [reviewCenter.draftReviews])
+
   const weeksByYear = useMemo(() => {
     const all = Array.from(new Set([snapshot.week, selectedWeek, ...reviewCenter.availableWeeks]))
       .filter(Boolean)
@@ -108,20 +367,19 @@ export function ReviewView({
     return Array.from(map.entries())
   }, [snapshot.week, selectedWeek, reviewCenter.availableWeeks])
 
-  const getNextItems = (rev: ReviewSummary): string[] =>
-    nextWeekDrafts[rev.relPath] !== undefined ? nextWeekDrafts[rev.relPath]! : rev.nextWeekItems
+  const { reviewedMetrics, missingMetrics } = useMemo(() => {
+    const reviewed: WeekProjectMetrics[] = []
+    const missing: WeekProjectMetrics[] = []
+    for (const m of reviewCenter.projectMetrics) {
+      if (m.review) reviewed.push(m)
+      else missing.push(m)
+    }
+    return { reviewedMetrics: reviewed, missingMetrics: missing }
+  }, [reviewCenter.projectMetrics])
 
-  const saveNextItems = (rev: ReviewSummary, items: string[]) => {
-    const cleaned = items.map((s) => s.trim()).filter(Boolean)
-    setNextWeekDrafts((prev) => ({ ...prev, [rev.relPath]: cleaned }))
-    void onRunAction(() => api.updateReview(rev.relPath, { nextWeek: cleaned }))
-  }
-
-  const handleSelectStatus = (rev: ReviewSummary, nextStatus: ReviewStatus) => {
-    setStatusMenuRelPath(null)
-    if (rev.status === nextStatus) return
-    void onRunAction(() => api.updateReview(rev.relPath, { status: nextStatus }))
-  }
+  const displayRange = isSwitchingWeek
+    ? isoWeekRangeShort(selectedWeek)
+    : `${reviewCenter.weekRange.start.slice(5)} ~ ${reviewCenter.weekRange.end.slice(5)}`
 
   return (
     <div className="lw-canvas-wide">
@@ -159,6 +417,7 @@ export function ReviewView({
                       <div className="lw-date-month">{year}年</div>
                       {weeks.map((w) => {
                         const active = w === selectedWeek
+                        const hasDraft = draftWeekSet.has(w)
                         return (
                           <button
                             key={w}
@@ -170,6 +429,10 @@ export function ReviewView({
                               setWeekMenuOpen(false)
                             }}
                           >
+                            <span
+                              className={`lw-status-dot ${hasDraft ? 'todo' : 'done'}`}
+                              style={{ opacity: hasDraft ? 1 : 0.25 }}
+                            />
                             <span className="lw-mono" style={{ flex: 1 }}>
                               {w}
                             </span>
@@ -203,230 +466,94 @@ export function ReviewView({
           </button>
 
           <span className="lw-muted lw-mono" style={{ marginLeft: 8 }}>
-            {reviewCenter.weekRange.start.slice(5)} ~ {reviewCenter.weekRange.end.slice(5)}
+            {displayRange}
           </span>
         </div>
       </div>
 
       {/* 2-Column Editorial Spread */}
-      <div className="lw-review-grid">
-        {/* Left: Project Reviews */}
+      <div
+        className="lw-review-grid"
+        style={
+          isSwitchingWeek
+            ? { opacity: 0.45, pointerEvents: 'none', transition: 'opacity 0.12s' }
+            : { transition: 'opacity 0.12s' }
+        }
+      >
+        {/* Left: Only Projects with Reviews in Selected Week */}
         <div className="lw-stack" style={{ gap: 28 }}>
-          {reviewCenter.projectMetrics.length === 0 ? (
-            <div className="lw-empty">暂无活跃项目</div>
+          {reviewedMetrics.length === 0 ? (
+            <div className="lw-empty">
+              {reviewCenter.projectMetrics.length === 0 ? '暂无活跃项目' : '这一周暂无复盘。'}
+            </div>
           ) : (
-            reviewCenter.projectMetrics.map((metric) => {
-              const rev = metric.review
-              const hours = metric.totalMinutes > 0 ? (metric.totalMinutes / 60).toFixed(1) : null
-              const ratio = metric.totalTasks > 0 ? metric.doneTasks / metric.totalTasks : 0
-              const nextItems = rev ? getNextItems(rev) : []
-              const summaryItems = rev
-                ? rev.summaryLines
-                    .map((l) => parseReviewWeekLine(l))
-                    .filter((x): x is ReviewWeekItem => x !== null)
-                : []
+            reviewedMetrics.map((metric) => (
+              <WeekReviewCard
+                key={`${metric.projectName}:${metric.review!.relPath}`}
+                metric={metric}
+                onOpenFile={onOpenFile}
+                onRunAction={onRunAction}
+              />
+            ))
+          )}
 
-              return (
-                <section key={metric.projectName} className="lw-stack" style={{ gap: 10 }}>
-                  <div className="lw-section-head">
-                    <div className="lw-row" style={{ gap: 9 }}>
-                      <IconProjectPie ratio={ratio} size={16} />
-                      <h2 className="lw-section-title">{metric.projectName}</h2>
-                      {hours && <span className="lw-muted">{hours} 小时</span>}
-                    </div>
+          {missingMetrics.length > 0 && (
+            <div style={{ paddingTop: 2 }}>
+              <div className="lw-menu-wrap" data-rv-gen-menu>
+                <button
+                  type="button"
+                  className="lw-btn lw-btn-sm lw-btn-ghost"
+                  style={{ color: 'var(--lw-text-3)', paddingLeft: 2 }}
+                  onClick={() => setGenerateMenuOpen((v) => !v)}
+                >
+                  <IconPlus size={13} />
+                  <span>生成项目复盘</span>
+                  <IconChevronDown size={12} />
+                </button>
 
-                    {rev ? (
-                      <div className="lw-row" style={{ gap: 2 }}>
-                        <div className="lw-menu-wrap" data-rv-status-menu>
-                          <button
-                            type="button"
-                            className={`lw-status-trigger ${statusMenuRelPath === rev.relPath ? 'open' : ''}`}
-                            onClick={() =>
-                              setStatusMenuRelPath(
-                                statusMenuRelPath === rev.relPath ? null : rev.relPath,
-                              )
-                            }
-                          >
-                            <span
-                              className={`lw-status-dot ${rev.status === 'final' ? 'done' : 'todo'}`}
-                            />
-                            <span>{rev.status === 'final' ? '已审核' : '待审核'}</span>
-                            <IconChevronDown size={12} />
-                          </button>
-
-                          {statusMenuRelPath === rev.relPath && (
-                            <div className="lw-menu" role="menu">
-                              {(
-                                [
-                                  ['draft', '待审核', 'todo'],
-                                  ['final', '已审核', 'done'],
-                                ] as const
-                              ).map(([val, label, dotCls]) => (
-                                <button
-                                  key={val}
-                                  type="button"
-                                  role="menuitem"
-                                  className={`lw-menu-item ${rev.status === val ? 'active' : ''}`}
-                                  onClick={() => handleSelectStatus(rev, val)}
-                                >
-                                  <span className={`lw-status-dot ${dotCls}`} />
-                                  <span style={{ flex: 1 }}>{label}</span>
-                                  {rev.status === val && <IconCheck size={12} />}
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          className="lw-icon-btn"
-                          style={{ height: 26, minWidth: 26 }}
-                          title="编辑复盘原文"
-                          onClick={() => onOpenFile(rev.relPath, { edit: true })}
-                        >
-                          <IconFile size={14} />
-                        </button>
-                      </div>
-                    ) : (
+                {generateMenuOpen && (
+                  <div
+                    className="lw-menu"
+                    role="menu"
+                    style={{
+                      left: 0,
+                      right: 'auto',
+                      minWidth: 200,
+                      maxHeight: 260,
+                      overflowY: 'auto',
+                    }}
+                  >
+                    {missingMetrics.map((m) => (
                       <button
+                        key={m.projectName}
                         type="button"
-                        className="lw-btn lw-btn-sm lw-btn-ghost"
-                        onClick={() =>
+                        role="menuitem"
+                        className="lw-menu-item"
+                        onClick={() => {
+                          setGenerateMenuOpen(false)
                           void onRunAction(
-                            () => api.generateWeeklyReview(metric.projectName, selectedWeek),
-                            { toast: `已生成 ${metric.projectName} 本周复盘` },
+                            () => api.generateWeeklyReview(m.projectName, selectedWeek),
+                            { toast: `已生成 ${m.projectName} ${selectedWeek} 复盘` },
                           )
-                        }
+                        }}
                       >
-                        生成本周复盘
+                        <span className="lw-status-dot doing" />
+                        <span
+                          style={{
+                            flex: 1,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {m.projectName}
+                        </span>
                       </button>
-                    )}
+                    ))}
                   </div>
-
-                  {rev && (
-                    <div className="lw-stack" style={{ gap: 12 }}>
-                      {summaryItems.length > 0 && (
-                        <div className="lw-list">
-                          {summaryItems.slice(0, 6).map((item, idx) => {
-                            const isEmptyPlaceholder =
-                              item.done === null && /^[（(].*暂无.*[）)]$/.test(item.text.trim())
-                            const isSubhead =
-                              item.done === null && /^\*\*[^*]+\*\*$/.test(item.text.trim())
-                            return (
-                              <div
-                                key={idx}
-                                className="lw-item-row"
-                                style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
-                              >
-                                {item.done !== null ? (
-                                  <span
-                                    className={`lw-check ${item.done ? 'checked' : ''}`}
-                                    style={{ marginTop: 3, cursor: 'default' }}
-                                  >
-                                    {item.done && <IconCheck />}
-                                  </span>
-                                ) : !isSubhead && !isEmptyPlaceholder ? (
-                                  <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
-                                    <span className="lw-bullet-dot" />
-                                  </span>
-                                ) : null}
-                                <span
-                                  className={`lw-item-title ${isEmptyPlaceholder ? 'lw-muted' : ''}`}
-                                >
-                                  <InlineText
-                                    text={item.text}
-                                    baseRelPath={rev.relPath}
-                                    onOpenFile={(rel) => onOpenFile(rel)}
-                                  />
-                                </span>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
-
-                      {/* Inline Editable Next Week Priorities */}
-                      <div className="lw-stack" style={{ gap: 2 }}>
-                        <div className="lw-idea-q" style={{ paddingTop: 2 }}>
-                          下周重点
-                        </div>
-                        <div className="lw-list">
-                          {nextItems.map((text, idx) => (
-                            <div
-                              key={`nw-${idx}`}
-                              className="lw-item-row"
-                              style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
-                            >
-                              <span
-                                className="lw-bullet-slot lw-mono"
-                                style={{ fontSize: 12, color: 'var(--lw-muted)', marginTop: 3 }}
-                              >
-                                {idx + 1}.
-                              </span>
-                              <EditableReviewLine
-                                value={text}
-                                baseRelPath={rev.relPath}
-                                onOpenFile={(rel) => onOpenFile(rel)}
-                                onChange={(val) => {
-                                  const next = nextItems.map((s, i) => (i === idx ? val : s))
-                                  setNextWeekDrafts((prev) => ({ ...prev, [rev.relPath]: next }))
-                                }}
-                                onCommit={() => saveNextItems(rev, nextItems)}
-                              />
-                              <div className="lw-hover-actions" style={{ marginTop: 1 }}>
-                                <button
-                                  type="button"
-                                  className="lw-icon-btn"
-                                  style={{ height: 22, minWidth: 22, padding: 0 }}
-                                  title="移除"
-                                  onClick={() =>
-                                    saveNextItems(
-                                      rev,
-                                      nextItems.filter((_, i) => i !== idx),
-                                    )
-                                  }
-                                >
-                                  <IconX size={12} />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-
-                          <form
-                            className="lw-item-row"
-                            style={{ alignItems: 'center', paddingTop: 5, paddingBottom: 5 }}
-                            onSubmit={(e) => {
-                              e.preventDefault()
-                              const val = (newNextInputs[rev.relPath] ?? '').trim()
-                              if (!val) return
-                              setNewNextInputs((prev) => ({ ...prev, [rev.relPath]: '' }))
-                              saveNextItems(rev, [...nextItems, val])
-                            }}
-                          >
-                            <span className="lw-bullet-slot">
-                              <IconPlus size={14} />
-                            </span>
-                            <input
-                              className="lw-inline-input"
-                              style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                              value={newNextInputs[rev.relPath] ?? ''}
-                              onChange={(e) =>
-                                setNewNextInputs((prev) => ({
-                                  ...prev,
-                                  [rev.relPath]: e.target.value,
-                                }))
-                              }
-                              placeholder="添加下周重点"
-                            />
-                          </form>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </section>
-              )
-            })
+                )}
+              </div>
+            </div>
           )}
         </div>
 
@@ -439,32 +566,33 @@ export function ReviewView({
           {reviewCenter.weekDiaries.length === 0 ? (
             <div className="lw-muted">本周暂无日记</div>
           ) : (
-            <div className="lw-stack" style={{ gap: 16 }}>
+            <div className="lw-stack" style={{ gap: 4 }}>
               {reviewCenter.weekDiaries.map((d) => (
                 <div
                   key={d.relPath}
+                  className="lw-project-row"
                   style={{
-                    cursor: 'pointer',
-                    paddingBottom: 14,
-                    borderBottom: '1px solid var(--lw-border)',
+                    flexDirection: 'column',
+                    alignItems: 'stretch',
+                    gap: 4,
+                    padding: '10px 10px',
+                    margin: '0 -10px',
                   }}
                   onClick={() => onOpenFile(d.relPath)}
                 >
-                  <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 4 }}>
-                    {formatDiaryDay(d.date)}
-                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 600 }}>{formatDiaryDay(d.date)}</div>
                   <div
                     style={{
                       fontSize: 13.5,
                       color: 'var(--lw-text-2)',
                       lineHeight: 1.65,
                       display: '-webkit-box',
-                      WebkitLineClamp: 3,
+                      WebkitLineClamp: 4,
                       WebkitBoxOrient: 'vertical',
                       overflow: 'hidden',
                     }}
                   >
-                    {d.preview || '（点击查看原文）'}
+                    {cleanDiarySnippet(d)}
                   </div>
                 </div>
               ))}

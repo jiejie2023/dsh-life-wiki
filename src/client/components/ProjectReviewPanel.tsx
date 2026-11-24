@@ -18,6 +18,40 @@ import {
 } from './Icons.tsx'
 import { InlineText } from './MarkdownView.tsx'
 
+export type ReviewSectionTab = 'thisWeek' | 'reasons' | 'lessons' | 'nextWeek'
+
+export const REVIEW_TABS: ReadonlyArray<readonly [ReviewSectionTab, string]> = [
+  ['thisWeek', '本周'],
+  ['reasons', '原因'],
+  ['lessons', '经验'],
+  ['nextWeek', '下周'],
+]
+
+export function ReviewModeTabs({
+  mode,
+  onChange,
+}: {
+  mode: ReviewSectionTab
+  onChange: (next: ReviewSectionTab) => void
+}) {
+  return (
+    <div className="lw-mode-tabs" role="tablist">
+      {REVIEW_TABS.map(([key, label]) => (
+        <button
+          key={key}
+          type="button"
+          role="tab"
+          aria-selected={mode === key}
+          className={`lw-mode-tab ${mode === key ? 'active' : ''}`}
+          onClick={() => onChange(key)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function EditableReviewLine({
   value,
   disabled,
@@ -79,6 +113,346 @@ export function EditableReviewLine({
   )
 }
 
+export function ReviewSectionBody({
+  mode,
+  draft,
+  relPath,
+  readOnly = false,
+  onOpenFile,
+  onCommitDraft,
+  onFlushSave,
+}: {
+  mode: ReviewSectionTab
+  draft: ReviewDraft
+  relPath: string
+  readOnly?: boolean
+  onOpenFile: (relPath: string, opts?: { edit?: boolean }) => void
+  onCommitDraft: (next: ReviewDraft, immediate?: boolean) => void
+  onFlushSave: () => void
+}) {
+  const [inputVal, setInputVal] = useState('')
+
+  useEffect(() => {
+    setInputVal('')
+  }, [mode, relPath])
+
+  if (mode === 'thisWeek') {
+    return (
+      <div className="lw-list">
+        {draft.thisWeekItems.map((item, idx) => {
+          const isSubhead = item.done === null && /^\*\*[^*]+\*\*$/.test(item.text.trim())
+          const isEmptyPlaceholder =
+            item.done === null && /^[（(].*暂无.*[）)]$/.test(item.text.trim())
+
+          return (
+            <div
+              key={`tw-${idx}`}
+              className="lw-item-row"
+              style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
+            >
+              {item.done !== null ? (
+                <button
+                  type="button"
+                  className={`lw-check ${item.done ? 'checked' : ''}`}
+                  style={{ marginTop: 4 }}
+                  disabled={readOnly}
+                  title={item.done ? '已完成（点击切为未完成）' : '未完成（点击切为已完成）'}
+                  onClick={() => {
+                    const nextItems = draft.thisWeekItems.map((it, i) =>
+                      i === idx ? { ...it, done: !it.done } : it,
+                    )
+                    onCommitDraft({ ...draft, thisWeekItems: nextItems }, true)
+                  }}
+                >
+                  {item.done && <IconCheck />}
+                </button>
+              ) : !isSubhead && !isEmptyPlaceholder ? (
+                <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
+                  <span className="lw-bullet-dot" />
+                </span>
+              ) : null}
+
+              <EditableReviewLine
+                value={item.text}
+                disabled={readOnly}
+                baseRelPath={relPath}
+                className={
+                  isSubhead
+                    ? 'lw-review-text lw-review-subhead'
+                    : isEmptyPlaceholder
+                      ? 'lw-review-text lw-muted'
+                      : 'lw-review-text'
+                }
+                onOpenFile={(p) => onOpenFile(p)}
+                onChange={(val) => {
+                  const nextItems = draft.thisWeekItems.map((it, i) =>
+                    i === idx ? { ...it, text: val } : it,
+                  )
+                  onCommitDraft({ ...draft, thisWeekItems: nextItems })
+                }}
+                onCommit={onFlushSave}
+              />
+
+              {!readOnly && (
+                <div className="lw-hover-actions" style={{ marginTop: 1 }}>
+                  <button
+                    type="button"
+                    className="lw-icon-btn"
+                    style={{ height: 22, minWidth: 22, padding: 0 }}
+                    title="移除"
+                    onClick={() => {
+                      const nextItems = draft.thisWeekItems.filter((_, i) => i !== idx)
+                      onCommitDraft({ ...draft, thisWeekItems: nextItems }, true)
+                    }}
+                  >
+                    <IconX size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {!readOnly && (
+          <form
+            className="lw-item-row"
+            style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+            onSubmit={(e) => {
+              e.preventDefault()
+              const text = inputVal.trim()
+              if (!text) return
+              setInputVal('')
+              const cleaned = draft.thisWeekItems.filter(
+                (it) => !(it.done === null && /^[（(].*暂无.*[）)]$/.test(it.text.trim())),
+              )
+              onCommitDraft({ ...draft, thisWeekItems: [...cleaned, { done: true, text }] }, true)
+            }}
+          >
+            <span className="lw-bullet-slot">
+              <IconPlus size={14} />
+            </span>
+            <input
+              className="lw-inline-input"
+              style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              placeholder="添加本周事项"
+            />
+          </form>
+        )}
+      </div>
+    )
+  }
+
+  if (mode === 'reasons') {
+    return (
+      <div className="lw-list">
+        {draft.reasons.map((text, idx) => (
+          <div
+            key={`rs-${idx}`}
+            className="lw-item-row"
+            style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
+          >
+            <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
+              <span className="lw-bullet-dot" />
+            </span>
+            <EditableReviewLine
+              value={text}
+              disabled={readOnly}
+              baseRelPath={relPath}
+              onOpenFile={(p) => onOpenFile(p)}
+              onChange={(val) => {
+                const next = draft.reasons.map((s, i) => (i === idx ? val : s))
+                onCommitDraft({ ...draft, reasons: next })
+              }}
+              onCommit={onFlushSave}
+            />
+            {!readOnly && (
+              <div className="lw-hover-actions" style={{ marginTop: 1 }}>
+                <button
+                  type="button"
+                  className="lw-icon-btn"
+                  style={{ height: 22, minWidth: 22, padding: 0 }}
+                  title="移除"
+                  onClick={() => {
+                    const next = draft.reasons.filter((_, i) => i !== idx)
+                    onCommitDraft({ ...draft, reasons: next }, true)
+                  }}
+                >
+                  <IconX size={12} />
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+        {!readOnly && (
+          <form
+            className="lw-item-row"
+            style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+            onSubmit={(e) => {
+              e.preventDefault()
+              const text = inputVal.trim()
+              if (!text) return
+              setInputVal('')
+              onCommitDraft({ ...draft, reasons: [...draft.reasons, text] }, true)
+            }}
+          >
+            <span className="lw-bullet-slot">
+              <IconPlus size={14} />
+            </span>
+            <input
+              className="lw-inline-input"
+              style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              placeholder="添加原因"
+            />
+          </form>
+        )}
+      </div>
+    )
+  }
+
+  if (mode === 'lessons') {
+    return (
+      <div className="lw-list">
+        {draft.lessons.map((text, idx) => (
+          <div
+            key={`ls-${idx}`}
+            className="lw-item-row"
+            style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
+          >
+            <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
+              <span className="lw-bullet-dot reflection" />
+            </span>
+            <EditableReviewLine
+              value={text}
+              disabled={readOnly}
+              baseRelPath={relPath}
+              onOpenFile={(p) => onOpenFile(p)}
+              onChange={(val) => {
+                const next = draft.lessons.map((s, i) => (i === idx ? val : s))
+                onCommitDraft({ ...draft, lessons: next })
+              }}
+              onCommit={onFlushSave}
+            />
+            {!readOnly && (
+              <div className="lw-hover-actions" style={{ marginTop: 1 }}>
+                <button
+                  type="button"
+                  className="lw-icon-btn"
+                  style={{ height: 22, minWidth: 22, padding: 0 }}
+                  title="移除"
+                  onClick={() => {
+                    const next = draft.lessons.filter((_, i) => i !== idx)
+                    onCommitDraft({ ...draft, lessons: next }, true)
+                  }}
+                >
+                  <IconX size={12} />
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+        {!readOnly && (
+          <form
+            className="lw-item-row"
+            style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+            onSubmit={(e) => {
+              e.preventDefault()
+              const text = inputVal.trim()
+              if (!text) return
+              setInputVal('')
+              onCommitDraft({ ...draft, lessons: [...draft.lessons, text] }, true)
+            }}
+          >
+            <span className="lw-bullet-slot">
+              <IconPlus size={14} />
+            </span>
+            <input
+              className="lw-inline-input"
+              style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              placeholder="添加经验"
+            />
+          </form>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div className="lw-list">
+      {draft.nextWeekItems.map((text, idx) => (
+        <div
+          key={`nw-${idx}`}
+          className="lw-item-row"
+          style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
+        >
+          <span
+            className="lw-bullet-slot lw-mono"
+            style={{ fontSize: 12, color: 'var(--lw-muted)', marginTop: 3 }}
+          >
+            {idx + 1}.
+          </span>
+          <EditableReviewLine
+            value={text}
+            disabled={readOnly}
+            baseRelPath={relPath}
+            onOpenFile={(p) => onOpenFile(p)}
+            onChange={(val) => {
+              const next = draft.nextWeekItems.map((s, i) => (i === idx ? val : s))
+              onCommitDraft({ ...draft, nextWeekItems: next })
+            }}
+            onCommit={onFlushSave}
+          />
+          {!readOnly && (
+            <div className="lw-hover-actions" style={{ marginTop: 1 }}>
+              <button
+                type="button"
+                className="lw-icon-btn"
+                style={{ height: 22, minWidth: 22, padding: 0 }}
+                title="移除"
+                onClick={() => {
+                  const next = draft.nextWeekItems.filter((_, i) => i !== idx)
+                  onCommitDraft({ ...draft, nextWeekItems: next }, true)
+                }}
+              >
+                <IconX size={12} />
+              </button>
+            </div>
+          )}
+        </div>
+      ))}
+      {!readOnly && (
+        <form
+          className="lw-item-row"
+          style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
+          onSubmit={(e) => {
+            e.preventDefault()
+            const text = inputVal.trim()
+            if (!text) return
+            setInputVal('')
+            onCommitDraft({ ...draft, nextWeekItems: [...draft.nextWeekItems, text] }, true)
+          }}
+        >
+          <span className="lw-bullet-slot">
+            <IconPlus size={14} />
+          </span>
+          <input
+            className="lw-inline-input"
+            style={{ flex: 1, padding: 0, fontSize: 13.5 }}
+            value={inputVal}
+            onChange={(e) => setInputVal(e.target.value)}
+            placeholder="添加下周重点"
+          />
+        </form>
+      )}
+    </div>
+  )
+}
+
 interface ProjectReviewPanelProps {
   project: ProjectCard
   currentWeek: string
@@ -98,18 +472,13 @@ export function ProjectReviewPanel({
   const latestWeek = weeksAsc[weeksAsc.length - 1] ?? ''
 
   const [selectedWeek, setSelectedWeek] = useState<string>(latestWeek)
+  const [mode, setMode] = useState<ReviewSectionTab>('thisWeek')
   const [menuOpen, setMenuOpen] = useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [rawContent, setRawContent] = useState<string | null>(null)
   const [draft, setDraft] = useState<ReviewDraft | null>(null)
   const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
-
-  // Quick-add inline inputs
-  const [newWeekItem, setNewWeekItem] = useState('')
-  const [newReason, setNewReason] = useState('')
-  const [newLesson, setNewLesson] = useState('')
-  const [newNextItem, setNewNextItem] = useState('')
 
   const dirtyRef = useRef(false)
   const latestRawRef = useRef<string | null>(null)
@@ -132,34 +501,26 @@ export function ProjectReviewPanel({
     if (!selectedSummary) {
       setRawContent(null)
       setDraft(null)
-      latestRawRef.current = null
-      latestDraftRef.current = null
       return
     }
     let alive = true
     setLoading(true)
+    setMode('thisWeek')
     dirtyRef.current = false
-    setNewWeekItem('')
-    setNewReason('')
-    setNewLesson('')
-    setNewNextItem('')
     api
       .readFile(selectedSummary.relPath)
       .then((res) => {
         if (!alive) return
-        setRawContent(res.content)
-        latestRawRef.current = res.content
         const parsed = parseReviewSections(res.content)
+        setRawContent(res.content)
         setDraft(parsed)
+        latestRawRef.current = res.content
         latestDraftRef.current = parsed
       })
       .catch(() => {
         if (!alive) return
-        setRawContent('')
-        latestRawRef.current = ''
-        const empty = parseReviewSections('')
-        setDraft(empty)
-        latestDraftRef.current = empty
+        setRawContent(null)
+        setDraft(null)
       })
       .finally(() => {
         if (alive) setLoading(false)
@@ -190,78 +551,68 @@ export function ProjectReviewPanel({
     }
   }, [menuOpen, statusMenuOpen])
 
-  const commitDraft = (next: ReviewDraft, immediateSave = false) => {
-    setDraft(next)
-    latestDraftRef.current = next
-    dirtyRef.current = true
-    if (immediateSave) {
-      void flushSave(next)
-    }
-  }
-
-  const flushSave = async (overrideDraft?: ReviewDraft) => {
-    if (!selectedSummary || project.archived) return
-    const base = latestRawRef.current
-    const current = overrideDraft ?? latestDraftRef.current
-    if (base === null || !current) return
-    if (!overrideDraft && !dirtyRef.current) return
-    const nextContent = applyReviewSections(base, current)
-    if (nextContent === base) {
-      dirtyRef.current = false
-      return
-    }
+  const persistNow = async (nextDraft: ReviewDraft) => {
+    if (!selectedSummary || latestRawRef.current === null) return
+    const nextMd = applyReviewSections(latestRawRef.current, nextDraft)
     dirtyRef.current = false
+    if (nextMd === latestRawRef.current) return
+    latestRawRef.current = nextMd
+    setRawContent(nextMd)
     setSaving(true)
     try {
       await onRunAction(async () => {
-        await api.writeFile(selectedSummary.relPath, nextContent)
-        latestRawRef.current = nextContent
-        setRawContent(nextContent)
+        await api.writeFile(selectedSummary.relPath, nextMd)
       })
     } finally {
       setSaving(false)
     }
   }
 
-  const handleSelectStatus = (nextStatus: ReviewStatus) => {
-    setStatusMenuOpen(false)
-    if (!draft || project.archived || draft.status === nextStatus) return
-    commitDraft({ ...draft, status: nextStatus }, true)
+  const commitDraft = (next: ReviewDraft, immediate = false) => {
+    setDraft(next)
+    latestDraftRef.current = next
+    dirtyRef.current = true
+    if (immediate) {
+      void persistNow(next)
+    }
+  }
+
+  const flushSave = async () => {
+    if (!dirtyRef.current || !latestDraftRef.current) return
+    await persistNow(latestDraftRef.current)
   }
 
   const handleSwitchWeek = async (nextWeek: string) => {
     await flushSave()
-    setMenuOpen(false)
     setSelectedWeek(nextWeek)
+    setMenuOpen(false)
   }
 
   const handleGenerateCurrentWeek = async () => {
     await flushSave()
-    setMenuOpen(false)
     await onRunAction(
       async () => {
         await api.generateWeeklyReview(project.name, currentWeek)
-        setSelectedWeek(currentWeek)
       },
       { toast: `已生成 ${currentWeek} 周复盘` },
     )
+    setSelectedWeek(currentWeek)
   }
 
-  if (!selectedSummary) {
+  if (project.reviewFiles.length === 0 || !selectedSummary) {
     return (
-      <div
-        className="lw-empty"
-        style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}
-      >
-        <span>暂无周复盘</span>
+      <div className="lw-empty">
+        暂无周复盘
         {!project.archived && (
-          <button
-            type="button"
-            className="lw-btn lw-btn-sm lw-btn-primary"
-            onClick={() => void handleGenerateCurrentWeek()}
-          >
-            生成本周复盘 ({currentWeek})
-          </button>
+          <div style={{ marginTop: 12 }}>
+            <button
+              type="button"
+              className="lw-btn lw-btn-sm lw-btn-primary"
+              onClick={() => void handleGenerateCurrentWeek()}
+            >
+              生成本周复盘 ({currentWeek})
+            </button>
+          </div>
         )}
       </div>
     )
@@ -273,10 +624,10 @@ export function ProjectReviewPanel({
   const hasCurrentWeek = project.reviewFiles.some((r) => r.week === currentWeek)
 
   return (
-    <div className="lw-stack" style={{ gap: 24 }}>
-      {/* Single-Row Week Switcher & Status Controls */}
+    <div className="lw-stack" style={{ gap: 6 }}>
+      {/* Single-Row Header: < • 2026-W48 ▾ > | [本周] 原因 经验 下周  • 待审核 ▾  📄 */}
       <div className="lw-section-head">
-        <div className="lw-row" style={{ gap: 2, marginLeft: -6 }} data-review-week-menu>
+        <div className="lw-row" style={{ gap: 2 }} data-review-week-menu>
           <button
             type="button"
             className="lw-icon-btn"
@@ -368,6 +719,8 @@ export function ProjectReviewPanel({
         </div>
 
         <div className="lw-row" style={{ gap: 2 }}>
+          <ReviewModeTabs mode={mode} onChange={setMode} />
+
           {saving && (
             <span className="lw-muted" style={{ marginRight: 4 }}>
               保存中…
@@ -398,7 +751,12 @@ export function ProjectReviewPanel({
                       type="button"
                       role="menuitem"
                       className={`lw-menu-item ${draft.status === val ? 'active' : ''}`}
-                      onClick={() => handleSelectStatus(val)}
+                      onClick={() => {
+                        setStatusMenuOpen(false)
+                        if (draft.status !== val) {
+                          commitDraft({ ...draft, status: val }, true)
+                        }
+                      }}
                     >
                       <span className={`lw-status-dot ${dotCls}`} />
                       <span style={{ flex: 1 }}>{label}</span>
@@ -409,349 +767,38 @@ export function ProjectReviewPanel({
               )}
             </div>
           )}
+          {draft && project.archived && (
+            <span className="lw-status-trigger" style={{ cursor: 'default' }}>
+              <span className={`lw-status-dot ${draft.status === 'final' ? 'done' : 'todo'}`} />
+              <span>{draft.status === 'final' ? '已审核' : '待审核'}</span>
+            </span>
+          )}
           <button
             type="button"
             className="lw-icon-btn"
             style={{ height: 26, minWidth: 26 }}
-            title="编辑 Markdown 原文"
-            onClick={async () => {
-              await flushSave()
-              onOpenFile(selectedSummary.relPath, { edit: true })
-            }}
+            title="打开复盘原文"
+            onClick={() => onOpenFile(selectedSummary.relPath)}
           >
             <IconFile size={14} />
           </button>
         </div>
       </div>
 
-      {/* Native Things 3 Structured Review Sections (Zero raw Markdown syntax / OS emojis) */}
       {loading || !draft || rawContent === null ? (
-        <div className="lw-muted">读取中…</div>
-      ) : (
-        <div className="lw-stack" style={{ gap: 24 }}>
-          {/* 1. 本周 */}
-          <section className="lw-stack" style={{ gap: 4 }}>
-            <div className="lw-between" style={{ paddingBottom: 4 }}>
-              <span className="lw-section-title" style={{ fontSize: 13.5 }}>
-                本周
-              </span>
-              {draft.totalHoursLine && <span className="lw-muted">{draft.totalHoursLine}</span>}
-            </div>
-            <div className="lw-list">
-              {draft.thisWeekItems.map((item, idx) => {
-                const isSubhead =
-                  item.done === null && /^\*\*[^*]+\*\*$/.test(item.text.trim())
-                const isEmptyPlaceholder =
-                  item.done === null && /^[（(].*暂无.*[）)]$/.test(item.text.trim())
-
-                return (
-                  <div
-                    key={`tw-${idx}`}
-                    className="lw-item-row"
-                    style={{ alignItems: 'flex-start' }}
-                  >
-                    {item.done !== null ? (
-                      <button
-                        type="button"
-                        className={`lw-check ${item.done ? 'checked' : ''}`}
-                        style={{ marginTop: 4 }}
-                        disabled={project.archived}
-                        title={item.done ? '已完成（点击切为未完成）' : '未完成（点击切为已完成）'}
-                        onClick={() => {
-                          const nextItems = draft.thisWeekItems.map((it, i) =>
-                            i === idx ? { ...it, done: !it.done } : it,
-                          )
-                          commitDraft({ ...draft, thisWeekItems: nextItems }, true)
-                        }}
-                      >
-                        {item.done && <IconCheck />}
-                      </button>
-                    ) : !isSubhead && !isEmptyPlaceholder ? (
-                      <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
-                        <span className="lw-bullet-dot" />
-                      </span>
-                    ) : null}
-
-                    <EditableReviewLine
-                      value={item.text}
-                      disabled={project.archived}
-                      baseRelPath={selectedSummary?.relPath}
-                      className={
-                        isSubhead
-                          ? 'lw-review-text lw-review-subhead'
-                          : isEmptyPlaceholder
-                            ? 'lw-review-text lw-muted'
-                            : 'lw-review-text'
-                      }
-                      onOpenFile={(rel) => onOpenFile(rel)}
-                      onChange={(val) => {
-                        const nextItems = draft.thisWeekItems.map((it, i) =>
-                          i === idx ? { ...it, text: val } : it,
-                        )
-                        commitDraft({ ...draft, thisWeekItems: nextItems })
-                      }}
-                      onCommit={() => void flushSave()}
-                    />
-                    {!project.archived && (
-                      <div className="lw-hover-actions" style={{ marginTop: 1 }}>
-                        <button
-                          type="button"
-                          className="lw-icon-btn"
-                          style={{ height: 22, minWidth: 22, padding: 0 }}
-                          title="移除"
-                          onClick={() => {
-                            const nextItems = draft.thisWeekItems.filter((_, i) => i !== idx)
-                            commitDraft({ ...draft, thisWeekItems: nextItems }, true)
-                          }}
-                        >
-                          <IconX size={12} />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-
-              {!project.archived && (
-                <form
-                  className="lw-item-row"
-                  style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const text = newWeekItem.trim()
-                    if (!text) return
-                    setNewWeekItem('')
-                    commitDraft(
-                      {
-                        ...draft,
-                        thisWeekItems: [...draft.thisWeekItems, { done: true, text }],
-                      },
-                      true,
-                    )
-                  }}
-                >
-                  <span className="lw-bullet-slot">
-                    <IconPlus size={14} />
-                  </span>
-                  <input
-                    className="lw-inline-input"
-                    style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                    value={newWeekItem}
-                    onChange={(e) => setNewWeekItem(e.target.value)}
-                    placeholder="添加本周事项"
-                  />
-                </form>
-              )}
-            </div>
-          </section>
-
-          {/* 2. 原因 */}
-          <section className="lw-stack" style={{ gap: 4 }}>
-            <span className="lw-section-title" style={{ fontSize: 13.5, paddingBottom: 4 }}>
-              原因
-            </span>
-            <div className="lw-list">
-              {draft.reasons.map((text, idx) => (
-                <div key={`rs-${idx}`} className="lw-item-row" style={{ alignItems: 'flex-start' }}>
-                  <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
-                    <span className="lw-bullet-dot" />
-                  </span>
-                  <EditableReviewLine
-                    value={text}
-                    disabled={project.archived}
-                    baseRelPath={selectedSummary?.relPath}
-                    onOpenFile={(rel) => onOpenFile(rel)}
-                    onChange={(val) => {
-                      const next = draft.reasons.map((s, i) => (i === idx ? val : s))
-                      commitDraft({ ...draft, reasons: next })
-                    }}
-                    onCommit={() => void flushSave()}
-                  />
-                  {!project.archived && (
-                    <div className="lw-hover-actions" style={{ marginTop: 1 }}>
-                      <button
-                        type="button"
-                        className="lw-icon-btn"
-                        style={{ height: 22, minWidth: 22, padding: 0 }}
-                        title="移除"
-                        onClick={() => {
-                          const next = draft.reasons.filter((_, i) => i !== idx)
-                          commitDraft({ ...draft, reasons: next }, true)
-                        }}
-                      >
-                        <IconX size={12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {!project.archived && (
-                <form
-                  className="lw-item-row"
-                  style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const text = newReason.trim()
-                    if (!text) return
-                    setNewReason('')
-                    commitDraft({ ...draft, reasons: [...draft.reasons, text] }, true)
-                  }}
-                >
-                  <span className="lw-bullet-slot">
-                    <IconPlus size={14} />
-                  </span>
-                  <input
-                    className="lw-inline-input"
-                    style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                    value={newReason}
-                    onChange={(e) => setNewReason(e.target.value)}
-                    placeholder="添加原因"
-                  />
-                </form>
-              )}
-            </div>
-          </section>
-
-          {/* 3. 经验 */}
-          <section className="lw-stack" style={{ gap: 4 }}>
-            <span className="lw-section-title" style={{ fontSize: 13.5, paddingBottom: 4 }}>
-              经验
-            </span>
-            <div className="lw-list">
-              {draft.lessons.map((text, idx) => (
-                <div key={`ls-${idx}`} className="lw-item-row" style={{ alignItems: 'flex-start' }}>
-                  <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
-                    <span className="lw-bullet-dot reflection" />
-                  </span>
-                  <EditableReviewLine
-                    value={text}
-                    disabled={project.archived}
-                    baseRelPath={selectedSummary?.relPath}
-                    onOpenFile={(rel) => onOpenFile(rel)}
-                    onChange={(val) => {
-                      const next = draft.lessons.map((s, i) => (i === idx ? val : s))
-                      commitDraft({ ...draft, lessons: next })
-                    }}
-                    onCommit={() => void flushSave()}
-                  />
-                  {!project.archived && (
-                    <div className="lw-hover-actions" style={{ marginTop: 1 }}>
-                      <button
-                        type="button"
-                        className="lw-icon-btn"
-                        style={{ height: 22, minWidth: 22, padding: 0 }}
-                        title="移除"
-                        onClick={() => {
-                          const next = draft.lessons.filter((_, i) => i !== idx)
-                          commitDraft({ ...draft, lessons: next }, true)
-                        }}
-                      >
-                        <IconX size={12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {!project.archived && (
-                <form
-                  className="lw-item-row"
-                  style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const text = newLesson.trim()
-                    if (!text) return
-                    setNewLesson('')
-                    commitDraft({ ...draft, lessons: [...draft.lessons, text] }, true)
-                  }}
-                >
-                  <span className="lw-bullet-slot">
-                    <IconPlus size={14} />
-                  </span>
-                  <input
-                    className="lw-inline-input"
-                    style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                    value={newLesson}
-                    onChange={(e) => setNewLesson(e.target.value)}
-                    placeholder="添加经验"
-                  />
-                </form>
-              )}
-            </div>
-          </section>
-
-          {/* 4. 下周 */}
-          <section className="lw-stack" style={{ gap: 4 }}>
-            <span className="lw-section-title" style={{ fontSize: 13.5, paddingBottom: 4 }}>
-              下周
-            </span>
-            <div className="lw-list">
-              {draft.nextWeekItems.map((text, idx) => (
-                <div key={`nw-${idx}`} className="lw-item-row" style={{ alignItems: 'flex-start' }}>
-                  <span
-                    className="lw-bullet-slot lw-mono"
-                    style={{ fontSize: 12, color: 'var(--lw-muted)', marginTop: 3 }}
-                  >
-                    {idx + 1}.
-                  </span>
-                  <EditableReviewLine
-                    value={text}
-                    disabled={project.archived}
-                    baseRelPath={selectedSummary?.relPath}
-                    onOpenFile={(rel) => onOpenFile(rel)}
-                    onChange={(val) => {
-                      const next = draft.nextWeekItems.map((s, i) => (i === idx ? val : s))
-                      commitDraft({ ...draft, nextWeekItems: next })
-                    }}
-                    onCommit={() => void flushSave()}
-                  />
-                  {!project.archived && (
-                    <div className="lw-hover-actions" style={{ marginTop: 1 }}>
-                      <button
-                        type="button"
-                        className="lw-icon-btn"
-                        style={{ height: 22, minWidth: 22, padding: 0 }}
-                        title="移除"
-                        onClick={() => {
-                          const next = draft.nextWeekItems.filter((_, i) => i !== idx)
-                          commitDraft({ ...draft, nextWeekItems: next }, true)
-                        }}
-                      >
-                        <IconX size={12} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-              {!project.archived && (
-                <form
-                  className="lw-item-row"
-                  style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    const text = newNextItem.trim()
-                    if (!text) return
-                    setNewNextItem('')
-                    commitDraft(
-                      { ...draft, nextWeekItems: [...draft.nextWeekItems, text] },
-                      true,
-                    )
-                  }}
-                >
-                  <span className="lw-bullet-slot">
-                    <IconPlus size={14} />
-                  </span>
-                  <input
-                    className="lw-inline-input"
-                    style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-                    value={newNextItem}
-                    onChange={(e) => setNewNextItem(e.target.value)}
-                    placeholder="添加下周重点"
-                  />
-                </form>
-              )}
-            </div>
-          </section>
+        <div className="lw-muted" style={{ padding: '12px 0' }}>
+          读取中…
         </div>
+      ) : (
+        <ReviewSectionBody
+          mode={mode}
+          draft={draft}
+          relPath={selectedSummary.relPath}
+          readOnly={project.archived}
+          onOpenFile={onOpenFile}
+          onCommitDraft={commitDraft}
+          onFlushSave={() => void flushSave()}
+        />
       )}
     </div>
   )

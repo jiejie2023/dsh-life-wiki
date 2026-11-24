@@ -95,6 +95,7 @@ export function LifeWikiApp() {
 
   const snapshotRef = useRef<BoardSnapshot | null>(null)
   snapshotRef.current = snapshot
+  const settingsLoadedRef = useRef(false)
   const fetchSeqRef = useRef(0)
 
   const showToast = useCallback((text: string, isError = false) => {
@@ -164,6 +165,7 @@ export function LifeWikiApp() {
         if (withSettings) {
           const s = await api.getSettings()
           if (seq !== fetchSeqRef.current) return
+          settingsLoadedRef.current = true
           setSettings(s)
           if (!s.dataDir) {
             setSnapshot(null)
@@ -187,7 +189,7 @@ export function LifeWikiApp() {
   )
 
   useEffect(() => {
-    void fetchSnapshot(selectedDate, selectedWeek, true)
+    void fetchSnapshot(selectedDate, selectedWeek, !settingsLoadedRef.current)
   }, [fetchSnapshot, selectedDate, selectedWeek])
 
   const runAction: RunActionFn = useCallback(
