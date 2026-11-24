@@ -140,6 +140,14 @@ export interface WikiPageSummary {
   excerpt: string
 }
 
+export interface RawEntryFile {
+  name: string
+  relPath: string
+  group: string
+  ext: string
+  isMarkdown: boolean
+}
+
 export interface RawEntrySummary {
   name: string
   kind: 'repo' | 'file' | 'folder'
@@ -149,6 +157,11 @@ export interface RawEntrySummary {
   fetched: string
   tier: 'L1' | 'L2' | 'L3' | null
   category: string
+  sourceGroup: string
+  excerpt: string
+  fileCount: number
+  files: RawEntryFile[]
+  citedByWiki: string[]
 }
 
 export interface WeekProjectMetrics {

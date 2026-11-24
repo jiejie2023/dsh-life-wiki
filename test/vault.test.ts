@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -523,5 +523,126 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
     assert.equal(parsedFreeform.tasks[0]?.text, '自动精选 10 条')
     assert.equal(parsedFreeform.logs.length, 2)
     assert.equal(parsedFreeform.logs[0], '## 1. 定时任务执行')
+  })
+
+  it('scans raw/ dynamically by local source folders, expands multi-article dirs, extracts repo files/tiers, and links wiki citations', async () => {
+    await withTempDir(async (dir) => {
+      const now = new Date('2026-11-25T09:00:00+08:00')
+      await initializeVault(dir, { withSample: false, initGit: false, now })
+
+      // 1. Multi-article web source directory (should expand to 2 independent entries with real titles)
+      await mkdir(join(dir, 'raw/web/anthropic'), { recursive: true })
+      await writeFile(
+        join(dir, 'raw/web/anthropic/building-effective-agents.md'),
+        [
+          '---',
+          'source: https://www.anthropic.com/research/building-effective-agents',
+          'fetched: 2026-10-12',
+          '---',
+          '',
+          'Title: Building effective agents',
+          '',
+          'Core guidance on agent workflows.',
+        ].join('\n'),
+        'utf8',
+      )
+      await writeFile(
+        join(dir, 'raw/web/anthropic/context-engineering.md'),
+        [
+          '---',
+          'source: https://www.anthropic.com/engineering/context',
+          'fetched: 2026-11-20',
+          '---',
+          '',
+          'Title: Effective context engineering',
+          '',
+          'Context is a finite resource.',
+        ].join('\n'),
+        'utf8',
+      )
+
+      // 2. User-created dynamic source folder (raw/bilibili/) -> automatically becomes 'bilibili' bucket
+      await mkdir(join(dir, 'raw/bilibili/up主'), { recursive: true })
+      await writeFile(
+        join(dir, 'raw/bilibili/up主/2026-11-24_剪辑流程拆解.md'),
+        [
+          '---',
+          'source: https://www.bilibili.com/video/BV123456',
+          'fetched: 2026-11-24',
+          '---',
+          '',
+          '# 剪辑流程拆解',
+          '',
+          '完整步骤记录。',
+        ].join('\n'),
+        'utf8',
+      )
+
+      // 3. GitHub repo L2 (mentions English "fork" in description + has repository.zip -> must be L2, not L3!)
+      await mkdir(join(dir, 'raw/cool-plugin/docs'), { recursive: true })
+      await writeFile(join(dir, 'raw/cool-plugin/README.md'), '# Cool Plugin\n', 'utf8')
+      await writeFile(join(dir, 'raw/cool-plugin/README.zh-CN.md'), '# 酷炫插件\n', 'utf8')
+      await writeFile(join(dir, 'raw/cool-plugin/docs/API.md'), '# API Docs\n', 'utf8')
+      await writeFile(join(dir, 'raw/cool-plugin/repository.zip'), 'PK', 'utf8')
+      await writeFile(
+        join(dir, 'raw/cool-plugin/SOURCE.md'),
+        [
+          '# 来源记录｜cool-plugin',
+          '',
+          '- 原始地址：https://github.com/example/cool-plugin',
+          '- 获取日期：2026-11-22',
+          '- 收藏档位：**L2 防闭源冷备**',
+          '',
+          '## 说明',
+          '',
+          '**简介**——这是一个增强版 fork 插件，用于演示冷备与多文档切换。',
+        ].join('\n'),
+        'utf8',
+      )
+
+      // 4. Nested personal archive under raw/me/notion/
+      await mkdir(join(dir, 'raw/me/notion/goals'), { recursive: true })
+      await writeFile(join(dir, 'raw/me/notion/SOURCE.md'), '# 来源记录｜notion\n', 'utf8')
+      await writeFile(join(dir, 'raw/me/notion/goals/年度目标.md'), '# 年度目标\n', 'utf8')
+
+      const engine = createLifeWikiEngine(dir, { now: () => now })
+      await engine.createWikiPage('Agent 架构笔记', '结合两篇来源总结。', [
+        'raw/web/anthropic/building-effective-agents.md',
+        'raw/cool-plugin/docs/API.md',
+      ])
+
+      const snap = await engine.getSnapshot('2026-11-25')
+      const raw = snap.knowledge.rawEntries
+
+      // Both Anthropic articles expanded cleanly under 'web' with real titles
+      const webItems = raw.filter((r) => r.category === 'web')
+      assert.equal(webItems.length, 2)
+      assert.equal(webItems[0]?.name, 'Effective context engineering')
+      assert.equal(webItems[1]?.name, 'Building effective agents')
+      assert.equal(webItems[1]?.sourceGroup, 'anthropic')
+      assert.deepEqual(webItems[1]?.citedByWiki, ['Agent 架构笔记'])
+
+      // Custom bilibili folder automatically surfaced as 'bilibili' bucket
+      const biliItems = raw.filter((r) => r.category === 'bilibili')
+      assert.equal(biliItems.length, 1)
+      assert.equal(biliItems[0]?.name, '剪辑流程拆解')
+      assert.equal(biliItems[0]?.sourceGroup, 'up主')
+
+      // GitHub repo accurately classified as L2, prefers Chinese README, exposes all docs, links Wiki citation
+      const repo = raw.find((r) => r.category === 'GitHub' && r.name === 'cool-plugin')!
+      assert.ok(repo)
+      assert.equal(repo.tier, 'L2')
+      assert.equal(repo.openRelPath, 'raw/cool-plugin/README.zh-CN.md')
+      assert.equal(repo.files.length, 4)
+      assert.match(repo.excerpt, /这是一个增强版 fork 插件/)
+      assert.deepEqual(repo.citedByWiki, ['Agent 架构笔记'])
+
+      // Nested raw/me/notion/ files exposed inside folder entry
+      const notion = raw.find((r) => r.category === 'me' && r.name === 'notion')!
+      assert.ok(notion)
+      assert.equal(notion.kind, 'folder')
+      assert.equal(notion.fileCount, 1)
+      assert.ok(notion.files.some((f) => f.relPath === 'raw/me/notion/goals/年度目标.md'))
+    })
   })
 })

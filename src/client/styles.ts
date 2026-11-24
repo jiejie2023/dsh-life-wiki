@@ -1633,6 +1633,40 @@ const CSS = `
   overflow: hidden;
 }
 
+/* Knowledge View refinements */
+.lw-kb-source-pill {
+  appearance: none;
+  border: none;
+  background: var(--lw-subtle);
+  color: var(--lw-muted);
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 1px 7px;
+  border-radius: 5px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.13s, color 0.13s;
+}
+
+.lw-kb-source-pill:hover {
+  background: var(--lw-hover-strong);
+  color: var(--lw-text);
+}
+
+.lw-kb-filetabs {
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.lw-kb-editor {
+  min-height: 460px;
+  font-size: 13px;
+  line-height: 1.7;
+  padding: 14px 16px;
+  border-radius: 10px;
+}
+
 /* Onboarding */
 .lw-onboard-wrap {
   flex: 1 1 auto;

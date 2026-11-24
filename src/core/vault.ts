@@ -19,6 +19,7 @@ import type {
   ProjectCard,
   ProjectStatus,
   ProjectTaskGroup,
+  RawEntryFile,
   RawEntrySummary,
   ReviewStatus,
   ReviewSummary,
@@ -184,6 +185,8 @@ function mimeForExt(ext: string): string {
       return 'image/gif'
     case '.svg':
       return 'image/svg+xml'
+    case '.pdf':
+      return 'application/pdf'
     default:
       return 'application/octet-stream'
   }
@@ -343,128 +346,429 @@ async function scanWikiPages(rootDir: string): Promise<WikiPageSummary[]> {
       excerpt: bodyLines.slice(0, 2).join(' ').slice(0, 150),
     })
   }
-  return pages
+  return pages.sort(
+    (a, b) => b.updated.localeCompare(a.updated) || a.title.localeCompare(b.title, 'zh-CN'),
+  )
+}
+
+const IGNORED_RAW_SUBDIRS = new Set([
+  '.git',
+  'node_modules',
+  'assets',
+  'images',
+  'img',
+  '__pycache__',
+])
+const READABLE_RAW_EXTS = new Set(['.md', '.txt', '.pdf'])
+const MARKDOWN_RAW_EXTS = new Set(['.md', '.txt'])
+
+function extractIsoDateToken(raw: string | undefined): string {
+  if (!raw) return ''
+  const m = /(\d{4}-\d{2}-\d{2})/.exec(raw)
+  return m ? m[1]! : ''
+}
+
+function stripInlineMd(text: string): string {
+  return text
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*`#_~]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+function extractRawTitle(content: string, fallbackFileName: string): string {
+  const fm = parseFrontmatter(content)
+  if (fm.fields.title?.trim()) return fm.fields.title.trim()
+
+  const bodyLines = fm.lines.slice(fm.bodyStartLine)
+  for (let i = 0; i < Math.min(bodyLines.length, 25); i += 1) {
+    const line = (bodyLines[i] ?? '').trim()
+    const titleLine = /^Title\s*[:：]\s*(.+)$/i.exec(line)
+    if (titleLine && titleLine[1]!.trim()) return titleLine[1]!.trim()
+  }
+
+  for (let i = 0; i < Math.min(bodyLines.length, 40); i += 1) {
+    const line = (bodyLines[i] ?? '').trim()
+    const h1 = /^#\s+(.+)$/.exec(line)
+    if (h1 && h1[1]!.trim()) {
+      const cleaned = h1[1]!.trim().replace(/^来源记录\s*[｜|：:]\s*/, '').trim()
+      if (cleaned) return cleaned
+    }
+  }
+
+  const base = fallbackFileName.replace(/\.[^.]+$/i, '')
+  const stripped = base.replace(/^\d{4}-\d{2}-\d{2}[-_\s]+/, '').trim()
+  return stripped || base
+}
+
+function extractRawExcerpt(content: string): string {
+  const fm = parseFrontmatter(content)
+  const bodyLines = fm.lines.slice(fm.bodyStartLine)
+  let inFence = false
+  for (const rawLine of bodyLines) {
+    const t = rawLine.trim()
+    if (t.startsWith('```')) {
+      inFence = !inFence
+      continue
+    }
+    if (inFence || !t) continue
+    if (
+      t.startsWith('#') ||
+      t.startsWith('![') ||
+      t.startsWith('|') ||
+      /^---+$/.test(t) ||
+      /^(?:Title|URL Source|Published Time|Author|Posted|Markdown Content)\s*:/i.test(t) ||
+      /^(?:作者|发布|原文|原始地址|获取日期|版本)[：:]/.test(t)
+    ) {
+      continue
+    }
+    const cleaned = stripInlineMd(t.replace(/^[-*>]\s+/, ''))
+    if (cleaned.length >= 6) return cleaned.slice(0, 150)
+  }
+  return ''
+}
+
+function extractSourceMdMeta(
+  sourceContent: string,
+  hasZip: boolean,
+): {
+  sourceUrl: string
+  fetched: string
+  excerpt: string
+  tier: 'L1' | 'L2' | 'L3'
+} {
+  const urlMatch = /-\s*原始地址[：:]\s*(\S+)/.exec(sourceContent)
+  const dateMatch = /-\s*获取日期[：:]\s*([^\r\n]+)/.exec(sourceContent)
+  const descMatch = /-\s*说明[：:]\s*([^\r\n]+)/.exec(sourceContent)
+  const explicitTier = /档位[：:]\s*\*{0,2}(L[123])\b/i.exec(sourceContent)
+
+  const rawUrl = urlMatch?.[1]?.trim() ?? ''
+  const sourceUrl = rawUrl && rawUrl !== '—' && rawUrl !== '-' ? rawUrl : ''
+  const fetched = extractIsoDateToken(dateMatch?.[1])
+  let rawDesc = descMatch?.[1] ?? ''
+  if (!rawDesc.trim()) {
+    const secDesc = getSectionText(splitLines(sourceContent).lines, '说明')
+    rawDesc = secDesc.split(/\r?\n/).find((l) => l.trim().length > 0) ?? ''
+  }
+  const cleanedDesc = rawDesc.replace(/^\*{0,2}简介\*{0,2}[—–\-：:\s]*/, '').trim()
+  const excerpt = stripInlineMd(cleanedDesc).slice(0, 150)
+
+  let tier: 'L1' | 'L2' | 'L3'
+  if (explicitTier) {
+    tier = explicitTier[1]!.toUpperCase() as 'L1' | 'L2' | 'L3'
+  } else if (
+    /D:\\Software|本地代码路径|本地路径[：:]|个人\s*Fork|实战二开|\bL3\b/i.test(sourceContent)
+  ) {
+    tier = 'L3'
+  } else if (hasZip) {
+    tier = 'L2'
+  } else {
+    tier = 'L1'
+  }
+
+  return { sourceUrl, fetched, excerpt, tier }
+}
+
+async function collectRawDirFiles(
+  rootDir: string,
+  dirRel: string,
+  maxDepth = 4,
+): Promise<RawEntryFile[]> {
+  const out: RawEntryFile[] = []
+  async function walk(curRel: string, subPrefix: string, depth: number): Promise<void> {
+    if (depth > maxDepth) return
+    const dirents = await readdir(join(rootDir, curRel), { withFileTypes: true }).catch(() => [])
+    for (const d of dirents) {
+      if (d.name.startsWith('.')) continue
+      if (d.isDirectory()) {
+        if (IGNORED_RAW_SUBDIRS.has(d.name.toLowerCase())) continue
+        const nextSub = subPrefix ? `${subPrefix}/${d.name}` : d.name
+        await walk(`${curRel}/${d.name}`, nextSub, depth + 1)
+      } else if (d.isFile()) {
+        if (/^license(\.[^.]+)?$/i.test(d.name)) continue
+        const ext = extname(d.name).toLowerCase()
+        if (!READABLE_RAW_EXTS.has(ext)) continue
+        out.push({
+          name: subPrefix ? `${subPrefix}/${d.name}` : d.name,
+          relPath: `${curRel}/${d.name}`,
+          group: subPrefix,
+          ext,
+          isMarkdown: MARKDOWN_RAW_EXTS.has(ext),
+        })
+      }
+    }
+  }
+  await walk(dirRel, '', 0)
+  return out
+}
+
+function rankRepoDocFile(f: RawEntryFile): number {
+  const lower = f.name.toLowerCase()
+  if (!f.group) {
+    if (/^readme[._-](zh|cn)/i.test(lower)) return 0
+    if (lower === 'readme.md') return 1
+    if (lower === 'source.md') return 2
+    if (/^readme/i.test(lower)) return 3
+    if (f.isMarkdown) return 4
+    return 6
+  }
+  return f.isMarkdown ? 5 : 7
+}
+
+function sortRepoFiles(files: RawEntryFile[]): RawEntryFile[] {
+  return [...files].sort(
+    (a, b) => rankRepoDocFile(a) - rankRepoDocFile(b) || a.name.localeCompare(b.name, 'zh-CN'),
+  )
+}
+
+function sortFolderFiles(files: RawEntryFile[]): RawEntryFile[] {
+  return [...files].sort((a, b) => {
+    const aSrc = !a.group && a.name.toLowerCase() === 'source.md' ? 0 : 1
+    const bSrc = !b.group && b.name.toLowerCase() === 'source.md' ? 0 : 1
+    if (aSrc !== bSrc) return aSrc - bSrc
+    return a.group.localeCompare(b.group, 'zh-CN') || a.name.localeCompare(b.name, 'zh-CN')
+  })
 }
 
 async function scanRawEntries(rootDir: string): Promise<RawEntrySummary[]> {
   const rawDir = join(rootDir, 'raw')
   if (!(await exists(rawDir))) return []
   const top = await readdir(rawDir, { withFileTypes: true })
-  const results: RawEntrySummary[] = []
+  const items: Array<{ entry: RawEntrySummary; mtimeMs: number }> = []
+
+  const pushRepoOrSnapshot = async (
+    dirRel: string,
+    dirName: string,
+    categoryOverride?: string,
+    sourceGroup = '',
+  ): Promise<void> => {
+    const absDir = join(rootDir, dirRel)
+    const directNames = await readdir(absDir).catch(() => [] as string[])
+    const sourceContent = (await readUtf8IfExists(join(absDir, 'SOURCE.md'))) ?? ''
+    const hasZip = directNames.includes('repository.zip')
+    const meta = extractSourceMdMeta(sourceContent, hasZip)
+    const allFiles = sortRepoFiles(await collectRawDirFiles(rootDir, dirRel))
+    if (allFiles.length === 0) return
+
+    const hasReadme = directNames.some((f) => /^readme/i.test(f))
+    const isCodeRepo =
+      categoryOverride === 'GitHub' ||
+      hasReadme ||
+      /github\.com|gitlab\.com|gitee\.com|codeberg\.org/i.test(meta.sourceUrl)
+
+    const st = await stat(join(rootDir, allFiles[0]!.relPath)).catch(() => null)
+    items.push({
+      mtimeMs: st?.mtimeMs ?? 0,
+      entry: {
+        name: dirName,
+        kind: isCodeRepo ? 'repo' : 'folder',
+        relPath: dirRel,
+        openRelPath: allFiles[0]!.relPath,
+        sourceUrl: meta.sourceUrl,
+        fetched: meta.fetched,
+        tier: isCodeRepo ? meta.tier : null,
+        category: categoryOverride ?? (isCodeRepo ? 'GitHub' : 'files'),
+        sourceGroup,
+        excerpt: meta.excerpt,
+        fileCount: allFiles.length,
+        files: allFiles,
+        citedByWiki: [],
+      },
+    })
+  }
+
+  const pushSingleFile = async (
+    fileRel: string,
+    fileName: string,
+    category: string,
+    sourceGroup: string,
+    companionFiles: RawEntryFile[] = [],
+  ): Promise<void> => {
+    const absFile = join(rootDir, fileRel)
+    const [content, st] = await Promise.all([
+      readUtf8IfExists(absFile),
+      stat(absFile).catch(() => null),
+    ])
+    const text = content ?? ''
+    const fm = parseFrontmatter(text)
+    const isSource = fileName.toLowerCase() === 'source.md'
+    const sourceMeta = isSource ? extractSourceMdMeta(text, false) : null
+    const fetched =
+      extractIsoDateToken(fm.fields.fetched) ||
+      extractIsoDateToken(fm.fields.date) ||
+      sourceMeta?.fetched ||
+      extractIsoDateToken(fileName)
+    const sourceUrl = fm.fields.source?.trim() || sourceMeta?.sourceUrl || ''
+    const title = extractRawTitle(text, fileName)
+    const excerpt = sourceMeta?.excerpt || extractRawExcerpt(text)
+    const selfFile: RawEntryFile = {
+      name: fileName,
+      relPath: fileRel,
+      group: '',
+      ext: extname(fileName).toLowerCase(),
+      isMarkdown: true,
+    }
+    const files = companionFiles.length > 0 ? [selfFile, ...companionFiles] : [selfFile]
+    items.push({
+      mtimeMs: st?.mtimeMs ?? 0,
+      entry: {
+        name: title,
+        kind: 'file',
+        relPath: fileRel,
+        openRelPath: fileRel,
+        sourceUrl,
+        fetched,
+        tier: null,
+        category,
+        sourceGroup,
+        excerpt,
+        fileCount: files.length,
+        files,
+        citedByWiki: [],
+      },
+    })
+  }
 
   for (const entry of top) {
-    if (entry.name === '.gitkeep') continue
+    if (entry.name.startsWith('.')) continue
+
+    // 1. Direct file at raw/ root -> 'files'
     if (entry.isFile() && entry.name.endsWith('.md')) {
-      const relPath = `raw/${entry.name}`
-      const content = (await readUtf8IfExists(join(rootDir, relPath))) ?? ''
-      const fm = parseFrontmatter(content)
-      results.push({
-        name: entry.name.replace(/\.md$/i, ''),
-        kind: 'file',
-        relPath,
-        openRelPath: relPath,
-        sourceUrl: fm.fields.source || '',
-        fetched: fm.fields.fetched || '',
-        tier: null,
-        category: '单文件',
-      })
+      await pushSingleFile(`raw/${entry.name}`, entry.name, 'files', '')
       continue
     }
     if (!entry.isDirectory()) continue
 
-    // Skip diary inside raw/me/ (diary has its own top-level tab!)
+    // 2. Personal area raw/me/ (excluding diary/, which has its own top-level tab)
     if (entry.name === 'me') {
-      const meFiles = await readdir(join(rawDir, 'me'), { withFileTypes: true })
-      for (const item of meFiles) {
-        if (item.name === 'diary' || item.name === '.gitkeep') continue
+      const meEntries = await readdir(join(rawDir, 'me'), { withFileTypes: true })
+      for (const item of meEntries) {
+        if (item.name === 'diary' || item.name.startsWith('.')) continue
         if (item.isFile() && item.name.endsWith('.md')) {
-          const relPath = `raw/me/${item.name}`
-          results.push({
-            name: item.name.replace(/\.md$/i, ''),
-            kind: 'file',
-            relPath,
-            openRelPath: relPath,
-            sourceUrl: '',
-            fetched: item.name.slice(0, 10),
-            tier: null,
-            category: '个人口述',
-          })
+          await pushSingleFile(`raw/me/${item.name}`, item.name, 'me', '')
         } else if (item.isDirectory()) {
-          const relPath = `raw/me/${item.name}`
-          const sourceRel = `${relPath}/SOURCE.md`
-          results.push({
-            name: item.name,
-            kind: 'folder',
-            relPath,
-            openRelPath: (await exists(join(rootDir, sourceRel))) ? sourceRel : relPath,
-            sourceUrl: '',
-            fetched: '',
-            tier: null,
-            category: '旧笔记导入',
+          const dirRel = `raw/me/${item.name}`
+          const allFiles = sortFolderFiles(await collectRawDirFiles(rootDir, dirRel, 5))
+          const sourceContent = (await readUtf8IfExists(join(rootDir, dirRel, 'SOURCE.md'))) ?? ''
+          const meta = extractSourceMdMeta(sourceContent, false)
+          const contentCount = allFiles.filter((f) => f.name.toLowerCase() !== 'source.md').length
+          const st = await stat(join(rootDir, dirRel)).catch(() => null)
+          items.push({
+            mtimeMs: st?.mtimeMs ?? 0,
+            entry: {
+              name: item.name,
+              kind: 'folder',
+              relPath: dirRel,
+              openRelPath: allFiles[0]?.relPath ?? dirRel,
+              sourceUrl: meta.sourceUrl,
+              fetched: meta.fetched,
+              tier: null,
+              category: 'me',
+              sourceGroup: '',
+              excerpt: meta.excerpt || (contentCount > 0 ? `${contentCount} 篇笔记` : ''),
+              fileCount: contentCount || allFiles.length,
+              files: allFiles,
+              citedByWiki: [],
+            },
           })
         }
       }
       continue
     }
 
-    // Group containers: web/ and x/
-    if (entry.name === 'web' || entry.name === 'x') {
-      const groupDir = join(rawDir, entry.name)
-      const subs = await readdir(groupDir, { withFileTypes: true })
-      for (const sub of subs) {
-        if (!sub.isDirectory()) continue
-        const subFiles = await readdir(join(groupDir, sub.name))
-        const mdFile = subFiles.find((f) => f.endsWith('.md') && f !== 'SOURCE.md')
-        const sourceMd = subFiles.includes('SOURCE.md') ? 'SOURCE.md' : null
-        const targetFile = mdFile ?? sourceMd
-        if (!targetFile) continue
-        const openRelPath = `raw/${entry.name}/${sub.name}/${targetFile}`
-        const content = (await readUtf8IfExists(join(rootDir, openRelPath))) ?? ''
-        const fm = parseFrontmatter(content)
-        results.push({
-          name: `${sub.name}${subFiles.length > 1 ? ` (${subFiles.length})` : ''}`,
-          kind: 'file',
-          relPath: `raw/${entry.name}/${sub.name}`,
-          openRelPath,
-          sourceUrl: fm.fields.source || '',
-          fetched: fm.fields.fetched || '',
-          tier: null,
-          category: entry.name === 'web' ? '网页原件' : 'X 帖文',
-        })
-      }
+    // 3. Inspect raw/<dirName>/ to distinguish standalone repo/unit vs dynamic source container
+    const dirRel = `raw/${entry.name}`
+    const dirEntries = await readdir(join(rootDir, dirRel), { withFileTypes: true })
+    const isStandaloneUnit = dirEntries.some(
+      (d) => d.isFile() && (/^readme/i.test(d.name) || d.name.toLowerCase() === 'source.md'),
+    )
+
+    if (isStandaloneUnit) {
+      await pushRepoOrSnapshot(dirRel, entry.name)
       continue
     }
 
-    // GitHub repository / directory snapshot
-    const repoDir = join(rawDir, entry.name)
-    const files = await readdir(repoDir)
-    const sourcePath = join(repoDir, 'SOURCE.md')
-    const sourceContent = (await readUtf8IfExists(sourcePath)) ?? ''
-    const urlMatch = /-\s*原始地址[：:]\s*(\S+)/.exec(sourceContent)
-    const dateMatch = /-\s*获取日期[：:]\s*(\S+)/.exec(sourceContent)
-    const hasZip = files.includes('repository.zip')
-    const hasForkOrLocal = /Fork|D:\\Software/i.test(sourceContent)
-    const tier: 'L1' | 'L2' | 'L3' = hasForkOrLocal ? 'L3' : hasZip ? 'L2' : 'L1'
-    const readmeFile =
-      files.find((f) => /^readme\.zh/i.test(f) || /^readme_cn/i.test(f)) ??
-      files.find((f) => /^readme\.md$/i.test(f)) ??
-      (files.includes('SOURCE.md') ? 'SOURCE.md' : files[0])
+    // 4. Dynamic source container (e.g. raw/web/, raw/x/, raw/bilibili/, raw/github/, raw/播客/)
+    const bucketName = /^github$/i.test(entry.name) ? 'GitHub' : entry.name
+    for (const child of dirEntries) {
+      if (child.name.startsWith('.')) continue
+      if (child.isFile() && child.name.endsWith('.md')) {
+        await pushSingleFile(`${dirRel}/${child.name}`, child.name, bucketName, '')
+        continue
+      }
+      if (!child.isDirectory() || IGNORED_RAW_SUBDIRS.has(child.name.toLowerCase())) continue
 
-    if (readmeFile) {
-      results.push({
-        name: entry.name,
-        kind: 'repo',
-        relPath: `raw/${entry.name}`,
-        openRelPath: `raw/${entry.name}/${readmeFile}`,
-        sourceUrl: urlMatch && urlMatch[1] !== '—' ? urlMatch[1]! : '',
-        fetched: dateMatch && dateMatch[1] !== '—' ? dateMatch[1]! : '',
-        tier,
-        category: '代码仓库',
-      })
+      const subRel = `${dirRel}/${child.name}`
+      const subEntries = await readdir(join(rootDir, subRel), { withFileTypes: true })
+      const hasSubReadme = subEntries.some((d) => d.isFile() && /^readme/i.test(d.name))
+      if (bucketName === 'GitHub' || hasSubReadme) {
+        await pushRepoOrSnapshot(subRel, child.name, bucketName)
+        continue
+      }
+
+      const mdFiles = subEntries
+        .filter((d) => d.isFile() && d.name.endsWith('.md') && d.name.toLowerCase() !== 'source.md')
+        .map((d) => d.name)
+        .sort((a, b) => a.localeCompare(b, 'zh-CN'))
+      const hasSubSource = subEntries.some(
+        (d) => d.isFile() && d.name.toLowerCase() === 'source.md',
+      )
+      const nonMdFiles: RawEntryFile[] = subEntries
+        .filter((d) => {
+          if (!d.isFile()) return false
+          const ext = extname(d.name).toLowerCase()
+          return ext === '.pdf'
+        })
+        .map((d) => ({
+          name: d.name,
+          relPath: `${subRel}/${d.name}`,
+          group: '',
+          ext: extname(d.name).toLowerCase(),
+          isMarkdown: false,
+        }))
+
+      if (mdFiles.length > 0) {
+        for (const mdName of mdFiles) {
+          await pushSingleFile(`${subRel}/${mdName}`, mdName, bucketName, child.name, nonMdFiles)
+        }
+      } else if (hasSubSource) {
+        await pushSingleFile(`${subRel}/SOURCE.md`, 'SOURCE.md', bucketName, child.name, nonMdFiles)
+      } else {
+        // Deeper nested folder without top-level md/SOURCE.md: collect recursively so nothing is lost
+        const nested = sortFolderFiles(await collectRawDirFiles(rootDir, subRel, 4))
+        if (nested.length > 0) {
+          const st = await stat(join(rootDir, subRel)).catch(() => null)
+          items.push({
+            mtimeMs: st?.mtimeMs ?? 0,
+            entry: {
+              name: child.name,
+              kind: 'folder',
+              relPath: subRel,
+              openRelPath: nested[0]!.relPath,
+              sourceUrl: '',
+              fetched: '',
+              tier: null,
+              category: bucketName,
+              sourceGroup: '',
+              excerpt: `${nested.length} 份文件`,
+              fileCount: nested.length,
+              files: nested,
+              citedByWiki: [],
+            },
+          })
+        }
+      }
     }
   }
 
-  return results.sort((a, b) => a.category.localeCompare(b.category, 'zh-CN') || a.name.localeCompare(b.name, 'zh-CN'))
+  return items
+    .sort(
+      (a, b) =>
+        b.entry.fetched.localeCompare(a.entry.fetched) ||
+        b.mtimeMs - a.mtimeMs ||
+        a.entry.name.localeCompare(b.entry.name, 'zh-CN'),
+    )
+    .map((x) => x.entry)
 }
 
 async function readGitStatus(rootDir: string): Promise<{ isRepo: boolean; dirtyCount: number }> {
@@ -783,6 +1087,24 @@ export function createLifeWikiEngine(
       scanRawEntries(rootDir),
       readGitStatus(rootDir),
     ])
+
+    // Populate bidirectional Wiki -> Raw citation badges
+    for (const rawEntry of rawEntries) {
+      const dirPrefix = `${rawEntry.relPath}/`
+      const cited: string[] = []
+      for (const page of wikiPages) {
+        const hit = page.sources.some((src) => {
+          const norm = src.replace(/\\/g, '/').replace(/^\/+/, '')
+          return (
+            norm === rawEntry.relPath ||
+            norm === rawEntry.openRelPath ||
+            norm.startsWith(dirPrefix)
+          )
+        })
+        if (hit) cited.push(page.title)
+      }
+      rawEntry.citedByWiki = cited
+    }
 
     const todayDiary: DiaryEntrySummary = diaries.find((d) => d.date === dateStr) ?? {
       date: dateStr,

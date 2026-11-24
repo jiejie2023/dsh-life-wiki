@@ -84,6 +84,7 @@ export function LifeWikiApp() {
 
   const [activeTab, setActiveTab] = useState<MainTab>('today')
   const [projectsResetSignal, setProjectsResetSignal] = useState(0)
+  const [knowledgeResetSignal, setKnowledgeResetSignal] = useState(0)
   const [selectedDate, setSelectedDate] = useState<string>(() => localTodayIso())
   const [selectedWeek, setSelectedWeek] = useState<string | undefined>(undefined)
 
@@ -352,6 +353,8 @@ export function LifeWikiApp() {
                 onClick={() => {
                   if (key === 'projects' && activeTab === 'projects') {
                     setProjectsResetSignal((n) => n + 1)
+                  } else if (key === 'knowledge' && activeTab === 'knowledge') {
+                    setKnowledgeResetSignal((n) => n + 1)
                   }
                   setActiveTab(key)
                 }}
@@ -493,6 +496,7 @@ export function LifeWikiApp() {
           {activeTab === 'knowledge' && (
             <KnowledgeView
               snapshot={snapshot}
+              resetSignal={knowledgeResetSignal}
               onOpenFile={(rel, opts) => setDrawerFile({ path: rel, edit: opts?.edit })}
               onRunAction={runAction}
             />
