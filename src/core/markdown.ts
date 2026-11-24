@@ -147,6 +147,17 @@ export function findSection(lines: string[], titlePrefix: string): SectionRange 
   return null
 }
 
+export function findAnySection(
+  lines: string[],
+  titlePrefixes: readonly string[],
+): SectionRange | null {
+  for (const prefix of titlePrefixes) {
+    const sec = findSection(lines, prefix)
+    if (sec) return sec
+  }
+  return null
+}
+
 export function getSectionText(lines: string[], titlePrefix: string): string {
   const sec = findSection(lines, titlePrefix)
   if (!sec) return ''
@@ -394,9 +405,12 @@ export function replaceSectionBody(
   content: string,
   sectionTitle: string,
   bodyLines: string[],
+  aliases?: readonly string[],
 ): string {
   const { lines, eol } = splitLines(content)
-  const sec = findSection(lines, sectionTitle)
+  const sec = aliases
+    ? findAnySection(lines, [sectionTitle, ...aliases])
+    : findSection(lines, sectionTitle)
   if (!sec) {
     const next = [...lines]
     if (next.length > 0 && next[next.length - 1]?.trim() !== '') next.push('')

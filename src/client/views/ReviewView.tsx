@@ -113,7 +113,7 @@ function WeekReviewCard({ metric, onOpenFile, onRunAction }: WeekReviewCardProps
   const rev = metric.review!
   const relPath = rev.relPath
 
-  const [mode, setMode] = useState<ReviewSectionTab>('thisWeek')
+  const [mode, setMode] = useState<ReviewSectionTab>('progress')
   const [rawContent, setRawContent] = useState<string | null>(null)
   const [draft, setDraft] = useState<ReviewDraft | null>(null)
   const [loading, setLoading] = useState(true)
@@ -150,8 +150,7 @@ function WeekReviewCard({ metric, onOpenFile, onRunAction }: WeekReviewCardProps
           status: rev.status === 'final' ? 'final' : 'draft',
           thisWeekItems: fallbackItems,
           totalHoursLine: rev.totalHoursText,
-          reasons: [],
-          lessons: [],
+          reflections: [],
           nextWeekItems: rev.nextWeekItems,
         }
         setDraft(fallback)
@@ -166,7 +165,7 @@ function WeekReviewCard({ metric, onOpenFile, onRunAction }: WeekReviewCardProps
   }, [summaryKey, relPath])
 
   useEffect(() => {
-    setMode('thisWeek')
+    setMode('progress')
   }, [relPath])
 
   useEffect(() => {
@@ -225,7 +224,7 @@ function WeekReviewCard({ metric, onOpenFile, onRunAction }: WeekReviewCardProps
 
   return (
     <section className="lw-stack" style={{ gap: 6 }}>
-      {/* Mirrors TodayView ProjectTaskPanel Header: Title | [本周] 原因 经验 下周  • 待审核 ▾  📄 */}
+      {/* Mirrors TodayView ProjectTaskPanel Header: Title | [进展] 反思 下周  • 待审核 ▾  📄 */}
       <div className="lw-section-head">
         <div className="lw-row" style={{ gap: 9, minWidth: 0 }}>
           <IconProjectPie ratio={ratio} size={16} />

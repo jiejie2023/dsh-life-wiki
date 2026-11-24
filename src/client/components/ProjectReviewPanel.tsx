@@ -18,12 +18,11 @@ import {
 } from './Icons.tsx'
 import { InlineText } from './MarkdownView.tsx'
 
-export type ReviewSectionTab = 'thisWeek' | 'reasons' | 'lessons' | 'nextWeek'
+export type ReviewSectionTab = 'progress' | 'reflection' | 'nextWeek'
 
 export const REVIEW_TABS: ReadonlyArray<readonly [ReviewSectionTab, string]> = [
-  ['thisWeek', '本周'],
-  ['reasons', '原因'],
-  ['lessons', '经验'],
+  ['progress', '进展'],
+  ['reflection', '反思'],
   ['nextWeek', '下周'],
 ]
 
@@ -136,7 +135,7 @@ export function ReviewSectionBody({
     setInputVal('')
   }, [mode, relPath])
 
-  if (mode === 'thisWeek') {
+  if (mode === 'progress') {
     return (
       <div className="lw-list">
         {draft.thisWeekItems.map((item, idx) => {
@@ -236,7 +235,7 @@ export function ReviewSectionBody({
               style={{ flex: 1, padding: 0, fontSize: 13.5 }}
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              placeholder="添加本周事项"
+              placeholder="添加本周进展"
             />
           </form>
         )}
@@ -244,47 +243,53 @@ export function ReviewSectionBody({
     )
   }
 
-  if (mode === 'reasons') {
+  if (mode === 'reflection') {
     return (
       <div className="lw-list">
-        {draft.reasons.map((text, idx) => (
-          <div
-            key={`rs-${idx}`}
-            className="lw-item-row"
-            style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
-          >
-            <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
-              <span className="lw-bullet-dot" />
-            </span>
-            <EditableReviewLine
-              value={text}
-              disabled={readOnly}
-              baseRelPath={relPath}
-              onOpenFile={(p) => onOpenFile(p)}
-              onChange={(val) => {
-                const next = draft.reasons.map((s, i) => (i === idx ? val : s))
-                onCommitDraft({ ...draft, reasons: next })
-              }}
-              onCommit={onFlushSave}
-            />
-            {!readOnly && (
-              <div className="lw-hover-actions" style={{ marginTop: 1 }}>
-                <button
-                  type="button"
-                  className="lw-icon-btn"
-                  style={{ height: 22, minWidth: 22, padding: 0 }}
-                  title="移除"
-                  onClick={() => {
-                    const next = draft.reasons.filter((_, i) => i !== idx)
-                    onCommitDraft({ ...draft, reasons: next }, true)
-                  }}
-                >
-                  <IconX size={12} />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+        {draft.reflections.map((text, idx) => {
+          const isSubhead = /^\*\*[^*]+\*\*$/.test(text.trim())
+          return (
+            <div
+              key={`rf-${idx}`}
+              className="lw-item-row"
+              style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
+            >
+              {!isSubhead && (
+                <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
+                  <span className="lw-bullet-dot reflection" />
+                </span>
+              )}
+              <EditableReviewLine
+                value={text}
+                disabled={readOnly}
+                baseRelPath={relPath}
+                className={isSubhead ? 'lw-review-text lw-review-subhead' : 'lw-review-text'}
+                onOpenFile={(p) => onOpenFile(p)}
+                onChange={(val) => {
+                  const next = draft.reflections.map((s, i) => (i === idx ? val : s))
+                  onCommitDraft({ ...draft, reflections: next })
+                }}
+                onCommit={onFlushSave}
+              />
+              {!readOnly && (
+                <div className="lw-hover-actions" style={{ marginTop: 1 }}>
+                  <button
+                    type="button"
+                    className="lw-icon-btn"
+                    style={{ height: 22, minWidth: 22, padding: 0 }}
+                    title="移除"
+                    onClick={() => {
+                      const next = draft.reflections.filter((_, i) => i !== idx)
+                      onCommitDraft({ ...draft, reflections: next }, true)
+                    }}
+                  >
+                    <IconX size={12} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )
+        })}
         {!readOnly && (
           <form
             className="lw-item-row"
@@ -294,7 +299,7 @@ export function ReviewSectionBody({
               const text = inputVal.trim()
               if (!text) return
               setInputVal('')
-              onCommitDraft({ ...draft, reasons: [...draft.reasons, text] }, true)
+              onCommitDraft({ ...draft, reflections: [...draft.reflections, text] }, true)
             }}
           >
             <span className="lw-bullet-slot">
@@ -305,76 +310,7 @@ export function ReviewSectionBody({
               style={{ flex: 1, padding: 0, fontSize: 13.5 }}
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              placeholder="添加原因"
-            />
-          </form>
-        )}
-      </div>
-    )
-  }
-
-  if (mode === 'lessons') {
-    return (
-      <div className="lw-list">
-        {draft.lessons.map((text, idx) => (
-          <div
-            key={`ls-${idx}`}
-            className="lw-item-row"
-            style={{ alignItems: 'flex-start', paddingTop: 5, paddingBottom: 5 }}
-          >
-            <span className="lw-bullet-slot" style={{ marginTop: 3 }}>
-              <span className="lw-bullet-dot reflection" />
-            </span>
-            <EditableReviewLine
-              value={text}
-              disabled={readOnly}
-              baseRelPath={relPath}
-              onOpenFile={(p) => onOpenFile(p)}
-              onChange={(val) => {
-                const next = draft.lessons.map((s, i) => (i === idx ? val : s))
-                onCommitDraft({ ...draft, lessons: next })
-              }}
-              onCommit={onFlushSave}
-            />
-            {!readOnly && (
-              <div className="lw-hover-actions" style={{ marginTop: 1 }}>
-                <button
-                  type="button"
-                  className="lw-icon-btn"
-                  style={{ height: 22, minWidth: 22, padding: 0 }}
-                  title="移除"
-                  onClick={() => {
-                    const next = draft.lessons.filter((_, i) => i !== idx)
-                    onCommitDraft({ ...draft, lessons: next }, true)
-                  }}
-                >
-                  <IconX size={12} />
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-        {!readOnly && (
-          <form
-            className="lw-item-row"
-            style={{ alignItems: 'center', paddingTop: 6, paddingBottom: 6 }}
-            onSubmit={(e) => {
-              e.preventDefault()
-              const text = inputVal.trim()
-              if (!text) return
-              setInputVal('')
-              onCommitDraft({ ...draft, lessons: [...draft.lessons, text] }, true)
-            }}
-          >
-            <span className="lw-bullet-slot">
-              <IconPlus size={14} />
-            </span>
-            <input
-              className="lw-inline-input"
-              style={{ flex: 1, padding: 0, fontSize: 13.5 }}
-              value={inputVal}
-              onChange={(e) => setInputVal(e.target.value)}
-              placeholder="添加经验"
+              placeholder="添加问题或反思"
             />
           </form>
         )}
@@ -472,7 +408,7 @@ export function ProjectReviewPanel({
   const latestWeek = weeksAsc[weeksAsc.length - 1] ?? ''
 
   const [selectedWeek, setSelectedWeek] = useState<string>(latestWeek)
-  const [mode, setMode] = useState<ReviewSectionTab>('thisWeek')
+  const [mode, setMode] = useState<ReviewSectionTab>('progress')
   const [menuOpen, setMenuOpen] = useState(false)
   const [statusMenuOpen, setStatusMenuOpen] = useState(false)
   const [rawContent, setRawContent] = useState<string | null>(null)
@@ -505,7 +441,7 @@ export function ProjectReviewPanel({
     }
     let alive = true
     setLoading(true)
-    setMode('thisWeek')
+    setMode('progress')
     dirtyRef.current = false
     api
       .readFile(selectedSummary.relPath)
@@ -625,7 +561,7 @@ export function ProjectReviewPanel({
 
   return (
     <div className="lw-stack" style={{ gap: 6 }}>
-      {/* Single-Row Header: < • 2026-W48 ▾ > | [本周] 原因 经验 下周  • 待审核 ▾  📄 */}
+      {/* Single-Row Header: < • 2026-W48 ▾ > | [进展] 反思 下周  • 待审核 ▾  📄 */}
       <div className="lw-section-head">
         <div className="lw-row" style={{ gap: 2 }} data-review-week-menu>
           <button

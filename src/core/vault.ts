@@ -31,6 +31,7 @@ import type {
 import {
   appendLineToSection,
   diffDays,
+  findAnySection,
   findSection,
   formatIsoWeek,
   formatLocalDate,
@@ -280,7 +281,7 @@ async function readReviewFile(
   const fm = parseFrontmatter(content)
   const status = parseReviewStatus(fm.fields.status)
 
-  const thisWeekSec = findSection(fm.lines, '本周')
+  const thisWeekSec = findAnySection(fm.lines, ['本周进展', '本周'])
   const summaryLines: string[] = []
   let totalHoursText = ''
   if (thisWeekSec) {
@@ -292,7 +293,7 @@ async function readReviewFile(
     }
   }
 
-  const nextSec = findSection(fm.lines, '下周')
+  const nextSec = findAnySection(fm.lines, ['下周重点', '下周'])
   const nextWeekItems: string[] = []
   if (nextSec) {
     for (let i = nextSec.startLine; i < nextSec.endLine; i += 1) {
@@ -565,15 +566,13 @@ export function createLifeWikiEngine(
           'status: draft',
           '---',
           '',
-          '## 本周',
+          '## 本周进展',
           '',
           '本周投入：0 小时',
           '',
-          '## 原因',
+          '## 问题与反思',
           '',
-          '## 经验',
-          '',
-          '## 下周',
+          '## 下周重点',
           '',
         ].join('\n'),
       )
@@ -1330,17 +1329,15 @@ export function createLifeWikiEngine(
         'status: draft',
         '---',
         '',
-        `## 本周（${range.start.slice(5)} ~ ${range.end.slice(5)}）`,
+        `## 本周进展（${range.start.slice(5)} ~ ${range.end.slice(5)}）`,
         '',
         ...(summaryItems.length > 0 ? summaryItems : ['1. （本周暂无已记录任务）']),
         '',
         `本周投入：${hoursText}`,
         '',
-        '## 原因',
+        '## 问题与反思',
         '',
-        '## 经验',
-        '',
-        '## 下周',
+        '## 下周重点',
         '',
         '1. ',
         '',
@@ -1359,7 +1356,12 @@ export function createLifeWikiEngine(
           .map((item) => item.trim())
           .filter((item) => item.length > 0)
           .map((item, idx) => `${idx + 1}. ${item.replace(/^\d+\.\s*/, '')}`)
-        content = replaceSectionBody(content, '下周', numbered.length > 0 ? numbered : ['1. '])
+        content = replaceSectionBody(
+          content,
+          '下周重点',
+          numbered.length > 0 ? numbered : ['1. '],
+          ['下周'],
+        )
       }
       await writeVaultFile(relPath, content)
     },

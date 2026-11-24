@@ -9,10 +9,14 @@ export interface ReviewDraft {
   status: ReviewStatus
   thisWeekItems: ReviewWeekItem[]
   totalHoursLine: string
-  reasons: string[]
-  lessons: string[]
+  reflections: string[]
   nextWeekItems: string[]
 }
+
+const PROGRESS_HEADINGS = ['本周进展', '本周'] as const
+const REFLECTION_HEADINGS = ['问题与反思', '反思'] as const
+const LEGACY_REFLECTION_HEADINGS = ['没做的', '原因', '经验'] as const
+const NEXT_WEEK_HEADINGS = ['下周重点', '下周'] as const
 
 function splitLines(text: string): { lines: string[]; eol: '\r\n' | '\n' } {
   const eol: '\r\n' | '\n' = text.includes('\r\n') ? '\r\n' : '\n'
@@ -45,26 +49,92 @@ function findH2Section(
   return null
 }
 
-function getSectionBody(lines: string[], titlePrefix: string): string {
-  const sec = findH2Section(lines, titlePrefix)
+function findAnyH2Section(
+  lines: string[],
+  prefixes: readonly string[],
+): { headingLine: number; startLine: number; endLine: number } | null {
+  for (const prefix of prefixes) {
+    const sec = findH2Section(lines, prefix)
+    if (sec) return sec
+  }
+  return null
+}
+
+function getSectionBody(lines: string[], prefixes: readonly string[]): string {
+  const sec = findAnyH2Section(lines, prefixes)
   if (!sec) return ''
   return lines.slice(sec.startLine, sec.endLine).join('\n').trim()
 }
 
-function replaceH2Body(text: string, titlePrefix: string, bodyLines: string[]): string {
+function replaceAnyH2Body(
+  text: string,
+  prefixes: readonly string[],
+  defaultTitle: string,
+  bodyLines: string[],
+): string {
   const { lines, eol } = splitLines(text)
-  const sec = findH2Section(lines, titlePrefix)
+  const sec = findAnyH2Section(lines, prefixes)
   const cleanBody = [...bodyLines]
   while (cleanBody.length > 0 && cleanBody[cleanBody.length - 1] === '') cleanBody.pop()
   const replacement = cleanBody.length > 0 ? ['', ...cleanBody, ''] : ['']
   if (!sec) {
     const next = [...lines]
     if (next.length > 0 && next[next.length - 1]?.trim() !== '') next.push('')
-    next.push(`## ${titlePrefix}`, ...replacement)
+    next.push(`## ${defaultTitle}`, ...replacement)
     return next.join(eol)
   }
   const next = [...lines.slice(0, sec.startLine), ...replacement, ...lines.slice(sec.endLine)]
   return next.join(eol)
+}
+
+function migrateLegacyReflections(text: string, bodyLines: string[]): string {
+  const { lines, eol } = splitLines(text)
+  const cleanBody = [...bodyLines]
+  while (cleanBody.length > 0 && cleanBody[cleanBody.length - 1] === '') cleanBody.pop()
+  const replacement = cleanBody.length > 0 ? ['', ...cleanBody, ''] : ['']
+
+  const found = LEGACY_REFLECTION_HEADINGS.map((h) => findH2Section(lines, h))
+    .filter((s): s is NonNullable<typeof s> => s !== null)
+    .sort((a, b) => a.headingLine - b.headingLine)
+
+  if (found.length === 0) {
+    // Insert before ## 下周重点 / ## 下周 if present, else append
+    const nextSec = findAnyH2Section(lines, NEXT_WEEK_HEADINGS)
+    if (nextSec) {
+      const next = [
+        ...lines.slice(0, nextSec.headingLine),
+        '## 问题与反思',
+        ...replacement,
+        ...lines.slice(nextSec.headingLine),
+      ]
+      return next.join(eol)
+    }
+    const next = [...lines]
+    if (next.length > 0 && next[next.length - 1]?.trim() !== '') next.push('')
+    next.push('## 问题与反思', ...replacement)
+    return next.join(eol)
+  }
+
+  // Replace earliest legacy heading with ## 问题与反思 and drop the remaining legacy headings
+  const primary = found[0]!
+  const dropRanges = found.slice(1)
+  const out: string[] = []
+  let i = 0
+  while (i < lines.length) {
+    if (i === primary.headingLine) {
+      out.push('## 问题与反思', ...replacement)
+      i = primary.endLine
+      continue
+    }
+    const drop = dropRanges.find((r) => r.headingLine === i)
+    if (drop) {
+      i = drop.endLine
+      continue
+    }
+    out.push(lines[i]!)
+    i += 1
+  }
+  return out.join(eol)
 }
 
 function updateYamlStatus(text: string, status: ReviewStatus): string {
@@ -124,6 +194,35 @@ function parsePlainList(sectionBody: string): string[] {
   return out
 }
 
+function extractReflections(lines: string[]): string[] {
+  const newSec = findAnyH2Section(lines, REFLECTION_HEADINGS)
+  if (newSec) {
+    return parsePlainList(lines.slice(newSec.startLine, newSec.endLine).join('\n').trim())
+  }
+  // Legacy 4-section (+ optional 没做的) read compatibility
+  const groups: Array<{ label: string; items: string[] }> = [
+    { label: '**未完成**', items: parsePlainList(getSectionBody(lines, ['没做的'])) },
+    { label: '**原因**', items: parsePlainList(getSectionBody(lines, ['原因'])) },
+    { label: '**经验**', items: parsePlainList(getSectionBody(lines, ['经验'])) },
+  ].filter((g) => g.items.length > 0)
+
+  if (groups.length === 0) return []
+  if (groups.length === 1) return groups[0]!.items
+  const merged: string[] = []
+  for (const g of groups) {
+    merged.push(g.label, ...g.items)
+  }
+  return merged
+}
+
+function stringArraysEqual(a: readonly string[], b: readonly string[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i += 1) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
+
 export function parseReviewSections(markdown: string): ReviewDraft {
   const { lines } = splitLines(markdown)
   let status: ReviewStatus = 'draft'
@@ -138,7 +237,7 @@ export function parseReviewSections(markdown: string): ReviewDraft {
     }
   }
 
-  const rawThisWeek = getSectionBody(lines, '本周')
+  const rawThisWeek = getSectionBody(lines, PROGRESS_HEADINGS)
   let totalHoursLine = ''
   const thisWeekItems: ReviewWeekItem[] = []
   for (const line of rawThisWeek.split('\n')) {
@@ -152,21 +251,23 @@ export function parseReviewSections(markdown: string): ReviewDraft {
     if (item) thisWeekItems.push(item)
   }
 
-  const reasons = parsePlainList(getSectionBody(lines, '原因'))
-  const lessons = parsePlainList(getSectionBody(lines, '经验'))
-  const nextWeekItems = parsePlainList(getSectionBody(lines, '下周'))
+  const reflections = extractReflections(lines)
+  const nextWeekItems = parsePlainList(getSectionBody(lines, NEXT_WEEK_HEADINGS))
 
   return {
     status,
     thisWeekItems,
     totalHoursLine,
-    reasons,
-    lessons,
+    reflections,
     nextWeekItems,
   }
 }
 
 export function applyReviewSections(originalMarkdown: string, draft: ReviewDraft): string {
+  const origLines = splitLines(originalMarkdown).lines
+  const hasNewReflectionHeading = Boolean(findAnyH2Section(origLines, REFLECTION_HEADINGS))
+  const origReflections = extractReflections(origLines)
+
   let next = updateYamlStatus(originalMarkdown, draft.status)
 
   let numberedIdx = 0
@@ -185,25 +286,24 @@ export function applyReviewSections(originalMarkdown: string, draft: ReviewDraft
     if (twLines.length > 0) twLines.push('')
     twLines.push(draft.totalHoursLine)
   }
-  next = replaceH2Body(next, '本周', twLines)
+  next = replaceAnyH2Body(next, PROGRESS_HEADINGS, '本周进展', twLines)
 
-  const reasonLines = draft.reasons
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => `- ${s}`)
-  next = replaceH2Body(next, '原因', reasonLines)
-
-  const lessonLines = draft.lessons
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .map((s) => `- ${s}`)
-  next = replaceH2Body(next, '经验', lessonLines)
+  const cleanedReflections = draft.reflections.map((s) => s.trim()).filter(Boolean)
+  const reflectionLines = cleanedReflections.map((s) =>
+    /^\*\*[^*]+\*\*$/.test(s) ? s : `- ${s}`,
+  )
+  if (hasNewReflectionHeading) {
+    next = replaceAnyH2Body(next, REFLECTION_HEADINGS, '问题与反思', reflectionLines)
+  } else if (!stringArraysEqual(cleanedReflections, origReflections)) {
+    // Only upgrade legacy 原因/经验/没做的 to 问题与反思 when user actually edits reflections
+    next = migrateLegacyReflections(next, reflectionLines)
+  }
 
   const nextWeekLines = draft.nextWeekItems
     .map((s) => s.trim())
     .filter(Boolean)
     .map((s, idx) => `${idx + 1}. ${s}`)
-  next = replaceH2Body(next, '下周', nextWeekLines)
+  next = replaceAnyH2Body(next, NEXT_WEEK_HEADINGS, '下周重点', nextWeekLines)
 
   return next
 }

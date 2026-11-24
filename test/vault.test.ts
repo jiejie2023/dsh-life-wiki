@@ -213,17 +213,64 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
     assert.match(updated, /## 目标\n\n保留原目标/)
   })
 
-  it('parses and updates weekly review sections losslessly while preserving total hours', () => {
-    const sample = [
+  it('parses and updates weekly review sections (3-section + legacy 4-section compat)', () => {
+    // 1. New 3-section review (本周进展 / 问题与反思 / 下周重点)
+    const modern = [
       '---',
       'status: draft',
       '---',
       '',
-      '## 本周',
+      '## 本周进展（11-23 ~ 11-29）',
       '',
       '1. ✅ 完成主页结构',
       '',
       '本周投入：1.5 小时',
+      '',
+      '## 问题与反思',
+      '',
+      '- 先写纯文本再排版效率高一倍',
+      '',
+      '## 下周重点',
+      '',
+      '1. 补齐 3 个项目截图',
+      '',
+    ].join('\n')
+
+    const parsedModern = parseReviewSections(modern)
+    assert.equal(parsedModern.status, 'draft')
+    assert.equal(parsedModern.totalHoursLine, '本周投入：1.5 小时')
+    assert.deepEqual(parsedModern.thisWeekItems, [{ done: true, text: '完成主页结构' }])
+    assert.deepEqual(parsedModern.reflections, ['先写纯文本再排版效率高一倍'])
+    assert.deepEqual(parsedModern.nextWeekItems, ['补齐 3 个项目截图'])
+
+    const updatedModern = applyReviewSections(modern, {
+      ...parsedModern,
+      status: 'final',
+      thisWeekItems: [
+        ...parsedModern.thisWeekItems,
+        { done: false, text: '3 个项目截图尚未收齐' },
+      ],
+      reflections: [...parsedModern.reflections, '每次改动做视觉验收'],
+    })
+    assert.match(updatedModern, /status: final/)
+    assert.match(updatedModern, /## 本周进展（11-23 ~ 11-29）/)
+    assert.match(updatedModern, /1\. ✅ 完成主页结构/)
+    assert.match(updatedModern, /2\. ❌ 3 个项目截图尚未收齐/)
+    assert.match(updatedModern, /本周投入：1\.5 小时/)
+    assert.match(updatedModern, /## 问题与反思[\s\S]*- 每次改动做视觉验收/)
+    assert.match(updatedModern, /## 下周重点/)
+
+    // 2. Legacy 4-section (+ 没做的 + custom section) read compat & lossless non-reflection edits
+    const legacy = [
+      '---',
+      'status: draft',
+      '---',
+      '',
+      '## 本周（11-10 ~ 11-15）',
+      '',
+      '**阶段主题**',
+      '- 普通进展说明',
+      '1. ✅ 明确完成项',
       '',
       '## 原因',
       '',
@@ -235,54 +282,51 @@ describe('LifeWiki Full Manual Closed-Loop (Seam 1B)', () => {
       '',
       '## 下周',
       '',
-      '1. 补齐 3 个项目截图',
+      '1. 补齐截图',
+      '',
+      '## 没做的',
+      '',
+      '- ❌ 排版还停着',
+      '',
+      '## 飞书同步',
+      '',
+      '已同步 12 条',
       '',
     ].join('\n')
 
-    const parsed = parseReviewSections(sample)
-    assert.equal(parsed.status, 'draft')
-    assert.equal(parsed.totalHoursLine, '本周投入：1.5 小时')
-    assert.deepEqual(parsed.thisWeekItems, [{ done: true, text: '完成主页结构' }])
-    assert.deepEqual(parsed.reasons, ['花了些时间打磨文案'])
-    assert.deepEqual(parsed.lessons, ['先写纯文本再排版'])
-    assert.deepEqual(parsed.nextWeekItems, ['补齐 3 个项目截图'])
-
-    const updated = applyReviewSections(sample, {
-      ...parsed,
-      status: 'final',
-      thisWeekItems: [
-        ...parsed.thisWeekItems,
-        { done: false, text: '3 个项目截图尚未收齐' },
-      ],
-      lessons: [...parsed.lessons, '每次改动做视觉验收'],
-    })
-    assert.match(updated, /status: final/)
-    assert.match(updated, /1\. ✅ 完成主页结构/)
-    assert.match(updated, /2\. ❌ 3 个项目截图尚未收齐/)
-    assert.match(updated, /本周投入：1\.5 小时/)
-    assert.match(updated, /- 每次改动做视觉验收/)
-
-    const freeform = [
-      '---',
-      'status: draft',
-      '---',
-      '',
-      '## 本周',
-      '',
-      '**阶段主题**',
-      '- 普通进展说明',
-      '1. ✅ 明确完成项',
-      '',
-    ].join('\n')
-    const freeParsed = parseReviewSections(freeform)
-    assert.deepEqual(freeParsed.thisWeekItems, [
+    const parsedLegacy = parseReviewSections(legacy)
+    assert.deepEqual(parsedLegacy.thisWeekItems, [
       { done: null, text: '**阶段主题**' },
       { done: null, text: '普通进展说明' },
       { done: true, text: '明确完成项' },
     ])
-    const freeApplied = applyReviewSections(freeform, freeParsed)
-    assert.match(freeApplied, /\*\*阶段主题\*\*/)
-    assert.match(freeApplied, /- 普通进展说明/)
-    assert.match(freeApplied, /1\. ✅ 明确完成项/)
+    assert.deepEqual(parsedLegacy.reflections, [
+      '**未完成**',
+      '❌ 排版还停着',
+      '**原因**',
+      '花了些时间打磨文案',
+      '**经验**',
+      '先写纯文本再排版',
+    ])
+
+    // Editing only status / progress keeps legacy sections & custom sections byte-intact
+    const legacyStatusOnly = applyReviewSections(legacy, { ...parsedLegacy, status: 'final' })
+    assert.match(legacyStatusOnly, /status: final/)
+    assert.match(legacyStatusOnly, /## 原因/)
+    assert.match(legacyStatusOnly, /## 经验/)
+    assert.match(legacyStatusOnly, /## 没做的/)
+    assert.match(legacyStatusOnly, /## 飞书同步\n\n已同步 12 条/)
+
+    // Editing reflections cleanly migrates legacy reflection blocks into ## 问题与反思 while keeping custom sections
+    const legacyMigrated = applyReviewSections(legacy, {
+      ...parsedLegacy,
+      reflections: [...parsedLegacy.reflections, '新加一条反思'],
+    })
+    assert.match(legacyMigrated, /## 问题与反思/)
+    assert.match(legacyMigrated, /- 新加一条反思/)
+    assert.doesNotMatch(legacyMigrated, /^## 原因$/m)
+    assert.doesNotMatch(legacyMigrated, /^## 经验$/m)
+    assert.doesNotMatch(legacyMigrated, /^## 没做的$/m)
+    assert.match(legacyMigrated, /## 飞书同步\n\n已同步 12 条/)
   })
 })
